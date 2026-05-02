@@ -1,4 +1,5 @@
 python-dotenv
+pyyaml
 
 # ccef-connections is the REQUIRED shared library for all external API connections (BigQuery,
 # Action Network, Airtable, etc.). Install it from the local path — it is not on PyPI.
