@@ -1,11 +1,14 @@
 """
 Sync PTV shift volunteers -> BigQuery raw -> Airtable.
 
-For each state listed in config/syncs.yaml:
+For each enabled row in proj-tmc-mem-com.ep.shift_volunteer_sync_targets:
   1. Pull volunteer signups from PTV's shift_volunteers_csv endpoint
   2. Append today's snapshot to ptv_raw_2026.shift_volunteers (partitioned by as_of_date)
-  3. For each Airtable target in the YAML, query the per-volunteer view filtered
-     to that state and upsert into the target base/table on email
+  3. Query the per-volunteer view filtered to that state and upsert into the
+     target Airtable base/table on email
+
+Sync targets are written by ep-airtable-utilities at base-go-live time.
+See bq/shift_volunteer_sync_targets.sql for the registry schema.
 
 Per-state and per-sync failures are isolated. Exit code is non-zero if any
 state failed to sync to BQ or any Airtable target failed to upsert.
@@ -13,15 +16,14 @@ state failed to sync to BQ or any Airtable target failed to upsert.
 
 from __future__ import annotations
 
+import json
 import logging
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
-import yaml
 from dotenv import load_dotenv
 
 from ccef_connections import (
@@ -36,8 +38,21 @@ from ccef_connections import (
 PROJECT = "proj-tmc-mem-com"
 RAW_TABLE = f"{PROJECT}.ptv_raw_2026.shift_volunteers"
 CURRENT_VIEW = f"{PROJECT}.ptv_raw_2026.v_shift_volunteers_current"
+SYNC_TARGETS_TABLE = f"{PROJECT}.ep.shift_volunteer_sync_targets"
 
-CONFIG_PATH = Path(__file__).parent / "config" / "syncs.yaml"
+# Default BQ-col -> Airtable-col mapping for the canonical CC "Shifted
+# Volunteers" base schema (contact columns only). Per-target overrides
+# in shift_volunteer_sync_targets.field_map_overrides merge over this:
+# a string value sets/replaces, a null value removes the key.
+DEFAULT_FIELD_MAP: Dict[str, str] = {
+    "email":        "Email",
+    "first_name":   "First Name",
+    "last_name":    "Last Name",
+    "phone_number": "Phone Number",
+    "county":       "County",
+    "state":        "State",
+}
+UPSERT_KEY_BQ = "email"
 
 # PTV row fields that need empty-string -> None coercion for BQ DATE/TIME/INT cols
 NULLABLE_EMPTY_FIELDS = ("shift_id", "date", "start_time", "end_time")
@@ -68,35 +83,65 @@ class Config:
         return sorted({s.state for s in self.syncs})
 
 
-def load_config(path: Path = CONFIG_PATH) -> Config:
-    with open(path) as f:
-        raw = yaml.safe_load(f) or {}
+def _merge_field_map(
+    default: Dict[str, str], overrides: Optional[Dict[str, Optional[str]]],
+) -> Dict[str, str]:
+    """
+    Merge override map over default map. String value sets/replaces;
+    null/None value removes the key entirely.
+    """
+    merged = dict(default)
+    for bq_col, at_col in (overrides or {}).items():
+        if at_col is None:
+            merged.pop(bq_col, None)
+        else:
+            merged[bq_col] = at_col
+    return merged
 
-    default_field_map = raw.get("default_field_map") or {}
-    upsert_key_bq = raw.get("upsert_key_bq", "email")
 
+def load_config(bq: BigQueryConnector) -> Config:
+    """Load enabled sync targets from the BQ registry."""
+    sql = f"""
+        SELECT
+          name,
+          state,
+          base_id,
+          table_name,
+          TO_JSON_STRING(field_map_overrides) AS field_map_overrides_json
+        FROM `{SYNC_TARGETS_TABLE}`
+        WHERE enabled = TRUE
+        ORDER BY name
+    """
     syncs: List[SyncEntry] = []
-    for entry in raw.get("syncs") or []:
-        merged = {**default_field_map, **(entry.get("field_map") or {})}
-        if upsert_key_bq not in merged:
+    for row in bq.query(sql):
+        overrides_json = row["field_map_overrides_json"]
+        overrides = (
+            json.loads(overrides_json)
+            if overrides_json and overrides_json != "null"
+            else {}
+        )
+        merged = _merge_field_map(DEFAULT_FIELD_MAP, overrides)
+        if UPSERT_KEY_BQ not in merged:
             raise ValueError(
-                f"Sync '{entry['name']}': field_map missing upsert key "
-                f"'{upsert_key_bq}'"
+                f"Sync '{row['name']}': merged field_map missing upsert key "
+                f"'{UPSERT_KEY_BQ}'"
             )
         syncs.append(SyncEntry(
-            name=entry["name"],
-            state=entry["state"],
-            base_id=entry["base_id"],
-            table=entry["table"],
+            name=row["name"],
+            state=row["state"],
+            base_id=row["base_id"],
+            table=row["table_name"],
             field_map=merged,
         ))
 
     if not syncs:
         raise ValueError(
-            f"No active syncs in {path}. Uncomment / add entries under 'syncs:'."
+            f"No enabled sync targets in {SYNC_TARGETS_TABLE}. "
+            "Have ep-airtable-utilities register a base, or flip an "
+            "existing target's `enabled` flag to TRUE."
         )
 
-    return Config(syncs=syncs, upsert_key_bq=upsert_key_bq)
+    return Config(syncs=syncs, upsert_key_bq=UPSERT_KEY_BQ)
 
 
 # -- Stage 1: PTV -> memory -------------------------------------------------
@@ -219,6 +264,23 @@ def _map_to_airtable_fields(
     return out
 
 
+def _count_existing_keys(
+    airtable: AirtableConnector, base_id: str, table: str, key_field: str,
+) -> Dict[str, int]:
+    """
+    Return {normalized_key_value: count} of existing destination records.
+    Used to detect rows where the upsert key matches >1 existing record --
+    Airtable's batch_upsert 422s the whole batch in that case, so we skip
+    those keys per-record instead.
+    """
+    counts: Dict[str, int] = defaultdict(int)
+    for r in airtable.get_records(base_id, table):
+        v = r["fields"].get(key_field)
+        if isinstance(v, str) and v.strip():
+            counts[v.strip().lower()] += 1
+    return counts
+
+
 def upsert_to_airtable(
     airtable: AirtableConnector,
     sync: SyncEntry,
@@ -229,12 +291,40 @@ def upsert_to_airtable(
         logger.info(f"[AT][{sync.name}] no rows to upsert")
         return 0
     upsert_key_at = sync.field_map[upsert_key_bq]
-    records = [
-        {"fields": _map_to_airtable_fields(r, sync.field_map)}
-        for r in rows
-    ]
-    # Drop rows missing the upsert key -- they'd create blank records
-    records = [r for r in records if r["fields"].get(upsert_key_at)]
+
+    # Pre-scan the destination for keys that already match multiple
+    # records. The "Shifted Volunteers" tables have a second write path
+    # (an emergency self-add form) that can produce duplicates when a
+    # self-add later also syncs in via PTV. Pushing one of those emails
+    # through batch_upsert 422s the entire batch.
+    existing_counts = _count_existing_keys(
+        airtable, sync.base_id, sync.table, upsert_key_at,
+    )
+
+    records: List[Dict[str, Any]] = []
+    skipped_dupes: List[str] = []
+    for r in rows:
+        fields = _map_to_airtable_fields(r, sync.field_map)
+        key_value = fields.get(upsert_key_at)
+        if not key_value:
+            # Drop rows missing the upsert key -- they'd create blank records
+            continue
+        if existing_counts.get(str(key_value).strip().lower(), 0) > 1:
+            skipped_dupes.append(str(key_value))
+            continue
+        records.append({"fields": fields})
+
+    if skipped_dupes:
+        logger.warning(
+            f"[AT][{sync.name}] skipped {len(skipped_dupes)} record(s) due to "
+            f"duplicate keys already in destination on '{upsert_key_at}': "
+            f"{skipped_dupes}"
+        )
+
+    if not records:
+        logger.info(f"[AT][{sync.name}] no upsertable records this run")
+        return 0
+
     airtable.batch_upsert(
         sync.base_id, sync.table, records, key_fields=[upsert_key_at],
     )
@@ -252,17 +342,18 @@ def main() -> int:
     )
     load_dotenv()
 
-    config = load_config()
     as_of_date = datetime.now(timezone.utc).date()
 
     logger.info(f"=== Shift volunteers sync -- as_of_date={as_of_date} ===")
-    logger.info(f"States to attempt: {config.unique_states}")
-    logger.info(f"Sync targets: {[s.name for s in config.syncs]}")
 
     failed_states: List[str] = []
     failed_syncs: List[str] = []
 
     with PTVConnector() as ptv, BigQueryConnector() as bq, AirtableConnector() as at:
+        config = load_config(bq)
+        logger.info(f"States to attempt: {config.unique_states}")
+        logger.info(f"Sync targets: {[s.name for s in config.syncs]}")
+
         rows_by_state, ptv_failed = fetch_ptv_for_states(
             ptv, config.unique_states, as_of_date,
         )

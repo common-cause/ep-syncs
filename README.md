@@ -20,7 +20,7 @@ cp .env.example .env
 Pulls volunteer signups from PTV's `shift_volunteers_csv` endpoint per state,
 appends a daily snapshot to `ptv_raw_2026.shift_volunteers` (date-partitioned
 on `as_of_date`), then upserts a per-volunteer summary into Airtable for each
-target listed in `config/syncs.yaml`.
+enabled target in `proj-tmc-mem-com.ep.shift_volunteer_sync_targets`.
 
 ```bash
 python sync_shift_volunteers.py
@@ -29,12 +29,16 @@ python sync_shift_volunteers.py
 Designed to be scheduled in Civis. Reads credentials from environment
 variables (Civis injects these from Civis Credentials).
 
-**Configuring sync targets:** edit `config/syncs.yaml`. Each entry maps a
-state to one Airtable destination (base + table). A state can appear in
-multiple entries when there are multiple downstream Airtable bases (primary
-plus coalition partners, for example). The `default_field_map` translates
-BigQuery view columns to Airtable column names; per-sync `field_map:` blocks
-override the default for individual bases.
+**Configuring sync targets:** sync targets live in the BigQuery registry
+table `ep.shift_volunteer_sync_targets`. They're written by
+`ep-airtable-utilities` as the final step of taking a new base live (see
+`bq/shift_volunteer_sync_targets.sql` for the schema and
+`civis/SCHEDULED_SCRIPTS.md` for the manual-INSERT escape hatch). Each row
+maps a state to one Airtable destination (base + table). A state can appear
+in multiple rows when there are multiple downstream bases (primary plus
+coalition partners, for example). The default BQ-col → Airtable-col mapping
+lives as `DEFAULT_FIELD_MAP` in `sync_shift_volunteers.py`; per-target
+overrides go in the row's `field_map_overrides` JSON column.
 
 **Per-state failure isolation:** a PTV pull failing for one state does not
 abort the run. Failed states are logged and skipped at the Airtable stage.
@@ -48,11 +52,14 @@ exact-duplicate rows defensively.
 
 ```
 ep-syncs/
-├── .claude/                    # Claude Code configuration
-├── .env.example                # Credential template (copy to .env, never commit .env)
+├── .claude/                              # Claude Code configuration
+├── .env.example                          # Credential template (copy to .env, never commit .env)
 ├── README.md
 ├── requirements.txt
-├── config/
-│   └── syncs.yaml              # PTV-state -> Airtable-base mappings
-└── sync_shift_volunteers.py    # PTV -> BQ -> Airtable sync
+├── bq/
+│   └── shift_volunteer_sync_targets.sql  # DDL for the sync-targets registry table
+├── civis/
+│   ├── sync_shift_volunteers.sh          # Civis Container Script body
+│   └── SCHEDULED_SCRIPTS.md              # Civis job source-of-truth
+└── sync_shift_volunteers.py              # PTV -> BQ -> Airtable sync
 ```
