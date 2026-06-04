@@ -5,5 +5,6 @@
 # Edit this file (not the Civis UI) to change setup/run steps. See
 # civis/SCHEDULED_SCRIPTS.md for the full job setup spec (docker image,
 # credentials, etc.).
-pip install "ccef-connections[airtable,bigquery] @ git+https://github.com/common-cause/ccef_connections.git"
+# Pinned to a ccef-connections release tag — bump deliberately when upgrading.
+pip install "ccef-connections[airtable,bigquery] @ git+https://github.com/common-cause/ccef_connections.git@v0.2.0"
 python app/sync_shift_volunteers.py
