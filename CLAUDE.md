@@ -32,6 +32,29 @@ Active credentials in `.env`:
 - `AIRTABLE_API_KEY_PASSWORD` — fill in your Airtable personal access token
 - `PTV_API_KEY_PASSWORD` — fill in once credential type is confirmed from sample script
 
+## BigQuery MCP
+
+The global `bigquery` MCP is active and pre-approved for this project. Use `bq_query(sql)` and `bq_list_tables(dataset)` to query data or inspect tables without leaving the conversation. Connects to `proj-tmc-mem-com` using the shared service account.
+
+```
+bq_query("SELECT * FROM ep.some_table LIMIT 5")
+bq_list_tables("ep")
+```
+
+## Schema MCP (bq-schema-docs)
+
+The global `schema` MCP provides field-level documentation for all 63 datasets in `proj-tmc-mem-com`. Use it to understand table structure before writing queries.
+
+```
+schema_list_datasets()                                                           # master index of all datasets
+schema_get_dataset("ep")                                                         # README + data model overview
+schema_list_tables("ep")                                                         # all table names in a dataset
+schema_get_table("ep", "some_table")                                             # all fields + types
+schema_search("volunteer", dataset="ep")                                         # find tables by keyword
+```
+
+All tools are pre-approved — no confirmation needed. Docs are auto-generated from INFORMATION_SCHEMA.
+
 ## Key Files
 _TODO: add key files and their purpose_
 
