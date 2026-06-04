@@ -1,10 +1,13 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-05-05*
+*Last verified: 2026-06-04*
 
-Source-of-truth for what's scheduled in Civis from this repo. The
-shell script bodies live alongside this file — paste their contents
-into Civis when creating or updating a Container Script job. Update
+Source-of-truth for what's scheduled in Civis from this repo. Jobs are
+**GitHub-backed**: the Civis job attaches this repo (branch `main`),
+clones it into `app/`, and the job body is just a stub
+(`bash app/civis/<script>.sh`). The version-controlled `.sh` files
+alongside this doc are the real job bodies — edit and push to change
+what runs in Civis; never edit script bodies in the Civis UI. Update
 this doc when a job is created, renamed, rescheduled, or retired.
 
 ## Scripts
@@ -32,7 +35,7 @@ this doc when a job is created, renamed, rescheduled, or retired.
 | Source repo | `common-cause/ep-syncs` |
 | Branch | `main` |
 | Docker image | `civisanalytics/datascience-python:latest` |
-| Command | contents of `civis/sync_shift_volunteers.sh` |
+| Command | `bash app/civis/sync_shift_volunteers.sh` |
 
 #### Credentials to attach
 
