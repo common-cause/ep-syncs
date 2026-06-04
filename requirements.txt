@@ -2,8 +2,9 @@ python-dotenv
 
 # ccef-connections is the REQUIRED shared library for all external API connections (BigQuery,
 # Action Network, Airtable, etc.). Install it from the local path — it is not on PyPI.
-# Run once per machine:
-#   pip install -e "C:/Users/RobKerth/OneDrive - Common Cause Education Fund/Documents/AI Interpretation/ccef-connections"
+# Since 0.2.0 heavy deps live behind extras; this project needs [airtable,bigquery]
+# (PTV is covered by the base install). Run once per machine:
+#   pip install -e "C:/Users/RobKerth/OneDrive - Common Cause Education Fund/Documents/AI Interpretation/ccef-connections[airtable,bigquery]"
 #
 # Do NOT write your own API clients in this project. If a new connection type is needed,
 # build it in ccef-connections and import it here.
