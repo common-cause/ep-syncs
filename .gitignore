@@ -12,3 +12,6 @@ tmp/
 .idea/
 *.iml
 inbox/
+.claude/handoff.md
+.claude/settings.local.json
+civis/logs/

@@ -16,10 +16,10 @@ this doc when a job is created, renamed, rescheduled, or retired.
 
 - **Source script:** `civis/sync_shift_volunteers.sh`
 - **Runs:** `app/sync_shift_volunteers.py`
-- **Type:** Civis Container Script
-- **Civis job name:** _(fill in once created)_
-- **Schedule:** _(fill in once created)_
-- **APIs touched:** PTV (no documented rate limit), BigQuery, Airtable (~5 req/s/base)
+- **Type:** Individual (Daily at 6:00 AM ET)
+- **Civis job name:** EP Shift Volunteer Sync
+- **Schedule:** Daily at 6:00 AM ET (Civis Container Script)
+- **APIs:** PTV (no documented rate limit), BigQuery (read/write), Airtable (~5 req/s/base)
 - **Description:** For each enabled row in
   `proj-tmc-mem-com.ep.shift_volunteer_sync_targets`, pulls
   `shift_volunteers_csv` from PTV, appends a daily snapshot to
