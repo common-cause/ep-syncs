@@ -1,7 +1,7 @@
 # All-Volunteers Sync — Draft Spec
 
-*Drafted 2026-07-02. Status: **built + verified locally** (2026-07-02). Only
-remaining step is creating the Civis job (§5) — Rob.*
+*Drafted 2026-07-02. Status: **built, verified, and live in Civis** (2026-07-02)
+— job "All Volunteers Sync" (id 360150329), daily 6:30 AM ET.*
 *Scope: **PTV → BigQuery only** for now. Airtable is deferred (see §7).*
 
 A second EP sync, sibling to `sync_shift_volunteers.py`, that pulls PTV's
@@ -192,7 +192,8 @@ Add a section to `civis/SCHEDULED_SCRIPTS.md` once the job exists.
 - [x] `civis/sync_all_volunteers.sh` — entrypoint (§5)
 - [x] End-to-end local run → 2026-07-02: all 51 states, 59,527 volunteers
       landed, exit 0. Insert chunked at 500/request. View dedup confirmed.
-- [ ] **Create Civis job + enable failure notifications** (Rob)
+- [x] Civis job created + scheduled: "All Volunteers Sync" (id 360150329),
+      GitHub-backed, daily 6:30 AM ET. (Confirm failure notifications enabled.)
 - [x] Document in `civis/SCHEDULED_SCRIPTS.md`
 
 ---

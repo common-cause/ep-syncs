@@ -1,7 +1,7 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-06-04 (shift sync). All-volunteers sync added 2026-07-02
-— BQ + script verified locally; Civis job not yet created (see its section).*
+*Last verified: 2026-06-04 (shift sync). All-volunteers sync added + scheduled
+in Civis 2026-07-02.*
 
 Source-of-truth for what's scheduled in Civis from this repo. Jobs are
 **GitHub-backed**: the Civis job attaches this repo (branch `main`),
@@ -139,9 +139,9 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 - **Source script:** `civis/sync_all_volunteers.sh`
 - **Runs:** `app/sync_all_volunteers.py`
-- **Type:** Individual (Daily; offset from the shift job, e.g. 6:30 AM ET)
-- **Civis job name:** EP All-Volunteers Sync *(NOT YET CREATED — see Status)*
-- **Schedule:** Daily (proposed 6:30 AM ET, Civis Container Script)
+- **Type:** Individual (Daily at 6:30 AM ET)
+- **Civis job name:** All Volunteers Sync (Civis job id 360150329)
+- **Schedule:** Daily at 6:30 AM ET (Civis Container Script)
 - **APIs:** PTV (no documented rate limit), BigQuery (read/write). No Airtable.
 - **Description:** Pulls PTV's `users_csv` (all *registered* volunteers, not
   just those attached to shifts) for all 50 states + DC and appends a daily
@@ -155,11 +155,14 @@ To pause a sync without removing it, set `enabled = FALSE`.
 #### Status (2026-07-02)
 
 - BQ objects created (`ptv_raw_2026.users` + `v_users_current`).
-- Script + entrypoint committed to the repo.
+- Script + entrypoint committed to the repo and pushed to `main`.
 - Verified end-to-end via local run: all 51 states, 59,527 volunteers landed,
   exit 0.
-- **Remaining: Rob must create the Civis job** (GitHub-backed, config below)
-  and enable failure notifications.
+- **Live in Civis:** job "All Volunteers Sync" (id 360150329), GitHub-backed,
+  scheduled daily at 6:30 AM ET. First scheduled run also clears the
+  smoke-test duplicate NE/PA snapshot (buffer will have cleared by then).
+- Confirm failure notifications are enabled on the job (recommended — the
+  shift job silently exited 1 for ~3 weeks before notifications were added).
 
 #### Civis configuration
 
