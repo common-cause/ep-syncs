@@ -1,6 +1,7 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-06-04*
+*Last verified: 2026-06-04 (shift sync). All-volunteers sync added 2026-07-02
+— BQ + script verified locally; Civis job not yet created (see its section).*
 
 Source-of-truth for what's scheduled in Civis from this repo. Jobs are
 **GitHub-backed**: the Civis job attaches this repo (branch `main`),
@@ -133,3 +134,67 @@ continue) — which is why ep-airtable-utilities is expected to validate
 the field map against live Airtable schema before writing the row.
 
 To pause a sync without removing it, set `enabled = FALSE`.
+
+### sync_all_volunteers.sh
+
+- **Source script:** `civis/sync_all_volunteers.sh`
+- **Runs:** `app/sync_all_volunteers.py`
+- **Type:** Individual (Daily; offset from the shift job, e.g. 6:30 AM ET)
+- **Civis job name:** EP All-Volunteers Sync *(NOT YET CREATED — see Status)*
+- **Schedule:** Daily (proposed 6:30 AM ET, Civis Container Script)
+- **APIs:** PTV (no documented rate limit), BigQuery (read/write). No Airtable.
+- **Description:** Pulls PTV's `users_csv` (all *registered* volunteers, not
+  just those attached to shifts) for all 50 states + DC and appends a daily
+  snapshot to `proj-tmc-mem-com.ptv_raw_2026.users` (date-partitioned on
+  `as_of_date`, clustered by `state, email`). No Airtable leg in this phase.
+  `v_users_current` exposes one cleaned row per (state, email) from each
+  state's latest snapshot. Per-state failures are isolated; exit code is
+  non-zero if any attempted state failed to land in BQ. Design + deferred
+  Airtable notes: `docs/all_volunteers_sync_spec.md`.
+
+#### Status (2026-07-02)
+
+- BQ objects created (`ptv_raw_2026.users` + `v_users_current`).
+- Script + entrypoint committed to the repo.
+- Verified end-to-end via local run: all 51 states, 59,527 volunteers landed,
+  exit 0.
+- **Remaining: Rob must create the Civis job** (GitHub-backed, config below)
+  and enable failure notifications.
+
+#### Civis configuration
+
+| Field | Value |
+|---|---|
+| Source repo | `common-cause/ep-syncs` |
+| Branch | `main` |
+| Docker image | `civisanalytics/datascience-python:latest` |
+| Command | `bash app/civis/sync_all_volunteers.sh` |
+
+#### Credentials to attach
+
+- `BIGQUERY_CREDENTIALS` — service account JSON in password field (reuse the
+  same Civis credential the shift job uses, ID 38653). Needs read/write on
+  `ptv_raw_2026`.
+- `PTV_API_KEY` — PTV API key in password field (reuse ID 39093). Username
+  field can hold `colab` but isn't read by the connector.
+- *No Airtable credential needed this phase.*
+
+#### Scheduling notes
+
+- Pulls all 50 states + DC every run (~51 API calls). `users_csv` returns no
+  data for empty states, so new program states appear automatically with no
+  config change. Scope at query time against the raw table if needed.
+- Same off-season/in-season cadence tradeoff as the shift sync: the raw
+  partition key is `as_of_date` (DATE), so multiple intra-day runs collapse
+  into one partition value.
+
+#### Failure mode
+
+- Script exits non-zero if any attempted state failed to land in BQ.
+- Same-day reruns pre-delete today's partition for the pulled states, then
+  re-insert. Streaming-buffer DML warnings on same-window reruns (~30-90 min)
+  are expected and benign — `v_users_current`'s `SELECT DISTINCT` dedupes
+  exact-duplicate rows so the current view stays correct.
+- Inserts are chunked (500 rows/request) because `users_csv` returns tens of
+  thousands of rows — a single streaming request would exceed the payload
+  limit.
