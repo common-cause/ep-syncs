@@ -15,3 +15,4 @@ inbox/
 .claude/handoff.md
 .claude/settings.local.json
 civis/logs/
+watson_teachin_export.csv

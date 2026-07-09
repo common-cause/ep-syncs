@@ -201,3 +201,77 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - Inserts are chunked (500 rows/request) because `users_csv` returns tens of
   thousands of rows — a single streaming request would exceed the payload
   limit.
+
+### sync_volunteer_sheets.sh
+
+- **Source script:** `civis/sync_volunteer_sheets.sh`
+- **Runs:** `app/sync_volunteer_sheets.py`
+- **Type:** Individual (Daily at 7:00 AM ET — after the all-volunteers sync
+  lands at 6:30)
+- **Civis job name:** *not created yet* — suggested "EP Volunteer Sheets Sync"
+- **Schedule:** Daily at 7:00 AM ET (Civis Container Script)
+- **APIs:** BigQuery (read only), Google Sheets + Drive (write; 60
+  requests/min/user quota — per-call 429s are retried with backoff)
+- **Description:** For each enabled row in
+  `proj-tmc-mem-com.ep.volunteer_sheet_targets`, maintains one Google Sheet
+  in the "2026 EP Volunteer Exports" shared-drive folder (state targets under
+  `By State/`, partner source-code targets under `By Partner/`). Rewrites the
+  hidden `_data` tab from the all-time PTV roster; the visible `Volunteers`
+  tab mirrors it via an array formula and is never overwritten, so partner
+  annotations to the right of the data block survive every refresh. Design:
+  `docs/volunteer_sheets_spec.md`; registry contract:
+  `bq/volunteer_sheet_targets.sql`.
+
+#### Status (2026-07-08)
+
+- BQ registry created and seeded (51 state targets enabled; 83 partner-code
+  targets seeded from `ep_archive.source_codes external='Y'` — **needs a
+  curation pass before the job is scheduled**, see the spec).
+- Script + entrypoint in the repo; verified end-to-end via local runs:
+  all 51 state sheets + the ACLUM partner prototype created and populated;
+  rerun idempotency and partner-edit preservation tested.
+- **Not yet in Civis.**
+
+#### Civis configuration
+
+| Field | Value |
+|---|---|
+| Source repo | `common-cause/ep-syncs` |
+| Branch | `main` |
+| Docker image | `civisanalytics/datascience-python:latest` |
+| Command | `bash app/civis/sync_volunteer_sheets.sh` |
+
+#### Credentials to attach
+
+- `BIGQUERY_CREDENTIALS` — service account JSON in password field (reuse
+  Civis credential ID 38653). Needs read on `ptv_raw_2026` and `ep`.
+- `GOOGLE_SHEETS_CREDENTIALS` — the `sheets-controllers@sheets-controllers`
+  service-account JSON in the password field. **May need to be created in
+  Civis** (custom credential, JSON in password field, same pattern as
+  BIGQUERY_CREDENTIALS); it exists locally in this project's `.env`.
+- *No PTV or Airtable credential needed — this job only reads BQ.*
+
+#### Scheduling notes
+
+- Run after the all-volunteers sync (6:30 AM ET) so sheets reflect the
+  morning's PTV snapshot; 7:00 AM ET leaves ~30 min of slack.
+- Full run over ~130 targets makes ~1,500 Sheets/Drive API calls; with the
+  60/min write quota a run can take 20–30 minutes. That's fine daily; don't
+  schedule it more often than hourly.
+- Adding a sheet = inserting an enabled registry row (see
+  `bq/volunteer_sheet_targets.sql`); the job picks it up next run. No
+  Civis-side or repo-side change needed.
+
+#### Failure mode
+
+- Script exits non-zero if any selected target failed; per-target failures
+  are isolated (one bad sheet doesn't block the rest).
+- Reruns are idempotent: sheets are looked up by title within their
+  subfolder; `_data`/`README` are rewritten, `Volunteers` and any
+  partner-added tabs/columns are left alone.
+- If a partner deletes the `Volunteers!A1` mirror formula, the next run
+  re-seeds it (only when A1 is empty — a `#REF!` blockage from partner data
+  inside the mirror block is left for a human to resolve).
+- End-of-run report logs WARNINGs for active source codes ≥25 volunteers
+  that no enabled target covers — watch these for new partner codes to
+  register.
