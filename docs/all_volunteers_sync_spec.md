@@ -160,7 +160,7 @@ New GitHub-backed container job, mirroring "EP Shift Volunteer Sync":
 
 | Field | Value |
 |---|---|
-| Job name | `EP All-Volunteers Sync` |
+| Job name | `EP All-Volunteers Sync` (as built: **"All Volunteers Sync"**, id 360150329) |
 | Source repo / branch | `common-cause/ep-syncs` / `main` |
 | Docker image | `civisanalytics/datascience-python:latest` |
 | Command | `bash app/civis/sync_all_volunteers.sh` |
