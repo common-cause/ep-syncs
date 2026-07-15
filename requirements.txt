@@ -1,4 +1,6 @@
 python-dotenv
+pyyaml    # misc_jobs_schedule.yaml (run_misc_jobs.py)
+tzdata    # America/New_York weekday resolution on hosts without a system tz db (e.g. Windows)
 
 # ccef-connections is the REQUIRED shared library for all external API connections (BigQuery,
 # Action Network, Airtable, etc.). Install it from the local path — it is not on PyPI.

@@ -88,6 +88,36 @@ python sync_volunteer_sheets.py --targets NE,aclum # subset (ops / testing)
 Reads BQ only (no PTV/Airtable). Design: `docs/volunteer_sheets_spec.md`.
 Not yet scheduled in Civis — see `civis/SCHEDULED_SCRIPTS.md`.
 
+### Miscellaneous sync jobs
+
+A single scheduled runner for small, periodic exports that don't each warrant
+their own Civis job. Instead of a new one-off Civis job per request, register
+the task in `run_misc_jobs.py`'s `JOBS` list and let the shared runner drive it
+— everything is version-controlled, so adding, re-timing, or retiring a
+scheduled export is a git commit, not Civis-console work.
+
+**One nightly Civis job** (~3 AM ET) runs `run_misc_jobs.py` with no arguments;
+each run executes only the tasks scheduled for tonight's weekday **in
+US/Eastern**, read from `misc_jobs_schedule.yaml`. Task *identity* (the `run()`
+callable) lives in a module under `misc_jobs/` + a `JOBS` row; task *timing*
+lives in the YAML. Because the job fires at 3 AM ET, a "Sunday night" task is
+scheduled on `mon` (the Monday 3 AM ET run). Today's one task,
+`event_975203_signups`, rebuilds a Google Sheet of the Mobilize event 975203
+FL-training signup roster and shares it with FL program.
+
+```bash
+python run_misc_jobs.py                             # tasks scheduled for tonight (ET)
+python run_misc_jobs.py --as-of mon                 # dry-run a specific night (still executes)
+python run_misc_jobs.py --only event_975203_signups # one task, ignore schedule (ops / testing)
+python run_misc_jobs.py --list                      # list tasks + their schedule, run nothing
+```
+
+Per-task failures are isolated; the runner exits non-zero if any selected task
+failed, and nights with nothing scheduled exit 0. To add a task: write
+`misc_jobs/<name>.py` with a `run()`, add a `MiscJob(...)` row to `JOBS`, and
+give it a schedule in `misc_jobs_schedule.yaml`. See
+`civis/SCHEDULED_SCRIPTS.md`. Not yet scheduled in Civis.
+
 ## Project Structure
 
 ```
@@ -103,13 +133,18 @@ ep-syncs/
 │   ├── sync_shift_volunteers.sh          # Civis Container Script body (shift sync)
 │   ├── sync_all_volunteers.sh            # Civis Container Script body (all-volunteers sync)
 │   ├── sync_volunteer_sheets.sh          # Civis Container Script body (volunteer sheets sync)
+│   ├── run_misc_jobs.sh                  # Civis Container Script body (misc jobs runner)
 │   └── SCHEDULED_SCRIPTS.md              # Civis job source-of-truth
 ├── docs/
 │   ├── all_volunteers_sync_spec.md       # All-volunteers sync design + deferred Airtable notes
 │   └── volunteer_sheets_spec.md          # Volunteer sheets sync design (BQ -> Google Sheets)
+├── misc_jobs/                            # Task modules for run_misc_jobs.py (one run() per task)
+│   └── event_975203_signups.py           # Mobilize event 975203 FL-training signups -> Google Sheet
+├── misc_jobs_schedule.yaml               # Per-task night-of-week schedule for run_misc_jobs.py
 ├── count_2025_volunteers.py              # One-off: count unique 2025 shift volunteers
 ├── parsons test.py                       # Legacy pre-ccef-connections reference — do not copy patterns
 ├── ptv_sync.py                           # Legacy pre-ccef-connections reference — do not copy patterns
+├── run_misc_jobs.py                      # Misc jobs runner (nightly; self-selects by ET weekday)
 ├── sync_shift_volunteers.py              # PTV shift_volunteers_csv -> BQ -> Airtable sync
 ├── sync_all_volunteers.py                # PTV users_csv -> BQ sync (no Airtable leg)
 └── sync_volunteer_sheets.py              # BQ roster -> Google Sheets exports (states + partners)

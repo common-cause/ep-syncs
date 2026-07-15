@@ -275,3 +275,108 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - End-of-run report logs WARNINGs for active source codes ≥25 volunteers
   that no enabled target covers — watch these for new partner codes to
   register.
+
+### run_misc_jobs.sh
+
+- **Source script:** `civis/run_misc_jobs.sh`
+- **Runs:** `app/run_misc_jobs.py` (no args)
+- **Type:** Individual (Nightly, ~3:00 AM ET)
+- **Civis job name:** *not created yet* — suggested "EP Misc Sync Jobs"
+- **Schedule:** Nightly, ~3:00 AM ET (Civis Container Script)
+- **APIs:** BigQuery (read only), Google Sheets + Drive (write)
+- **Description:** Shared runner for small, periodic exports that don't each
+  warrant their own Civis job. **One nightly job**; on each run the runner
+  reads `misc_jobs_schedule.yaml` and executes only the tasks scheduled for
+  tonight's weekday **in US/Eastern**. Task *identity* (the `run()` callable)
+  lives in a module under `misc_jobs/`, registered in `JOBS` in
+  `run_misc_jobs.py`; task *timing* lives in the YAML, keyed by job key.
+  Per-task failures are isolated and the runner exits non-zero if any selected
+  task failed. **Add a scheduled export by committing a task module + a `JOBS`
+  row + a YAML entry — no Civis-side change. Re-time an existing task by
+  editing the YAML and pushing.**
+
+  Because the job fires at 3 AM ET, a task belongs to the ET calendar day it
+  fires on — so a "Sunday night" task is scheduled on `mon` (the Monday 3 AM
+  ET run). This is deliberate: it lets one nightly job cover every day-of-week
+  pattern from a single config, instead of one Civis job per cadence.
+
+#### Registered tasks
+
+| Key | Scheduled (see YAML) | What it does |
+|---|---|---|
+| `event_975203_signups` | `mon` (i.e. "Sun night") | Rebuilds a Google Sheet (in the FL Trainings shared-drive folder) with the full signup roster for Mobilize event 975203 (FL training series, sessions Jul 22 – Aug 16 2026), for FL program. Read-from-BQ, three job-owned tabs (Read me / Signups / By session); shares the file with Amy (`akeith@`). **Time-boxed** — retire the `JOBS` row + YAML entry after the series ends 2026-08-16. |
+
+#### Status (2026-07-14)
+
+- Runner (nightly + YAML day-matcher), `misc_jobs/` package, schedule file, and
+  entrypoint in the repo.
+- Verified end-to-end via local run: `event_975203_signups` refreshed its
+  sheet (240 signups, 232 active, 8 cancelled, 167 people), exit 0. Confirmed
+  the `sheets-controllers@` SA has write access to the destination folder.
+  Day-matching verified (`mon` selects the task; other nights are a clean
+  exit-0 no-op).
+- **Not yet in Civis.**
+
+#### Civis configuration
+
+| Field | Value |
+|---|---|
+| Source repo | `common-cause/ep-syncs` |
+| Branch | `main` |
+| Docker image | `civisanalytics/datascience-python:latest` |
+| Command | `bash app/civis/run_misc_jobs.sh` |
+
+#### Credentials to attach
+
+- `BIGQUERY_CREDENTIALS` — service account JSON in password field (reuse Civis
+  credential ID 38653). Needs read on the datasets any registered task reads
+  (today: `mobilize_cleaned`).
+- `GOOGLE_SHEETS_CREDENTIALS` — the `sheets-controllers@sheets-controllers`
+  service-account JSON in the password field (same credential the volunteer
+  sheets job uses). The SA must be able to write to every Drive folder a task
+  targets; access to the current FL folder is confirmed.
+- *No PTV or Airtable credential needed for the current task set.*
+
+#### Scheduling notes
+
+- Set the Civis schedule to **nightly, ~3:00 AM ET** and leave it there; day
+  selection is the runner's job, not Civis's. The 3 AM slot sits well clear of
+  the UTC date boundary, so tonight's ET weekday is unambiguous, and there's no
+  upstream-freshness dependency tighter than the ~daily `mobilize_cleaned`
+  mirror refresh.
+- **Which tasks run which nights is `misc_jobs_schedule.yaml`, not Civis.** Edit
+  the YAML and push; no Civis change. `days:` takes weekday abbreviations
+  (`mon`..`sun`) or `daily`. Set `enabled: false` to park a task.
+- Nights with nothing scheduled are a clean exit-0 no-op — a nightly job that
+  mostly does nothing is expected and cheap.
+- Enable failure notifications on the job (the shift job silently exited 1 for
+  ~3 weeks before notifications were added).
+- Local dry-run of any night: `python run_misc_jobs.py --as-of mon`
+  (still executes the selected tasks); `--list` shows each task's schedule
+  without running anything.
+
+#### Failure mode
+
+- Per-task failures are isolated (one failing task doesn't block the others);
+  the runner exits non-zero if any selected task raised, so Civis flags it.
+- Nothing scheduled for tonight → the runner logs "nothing to do" and exits 0.
+  A malformed schedule file (bad weekday token, unreadable YAML) exits 1 before
+  running anything. `--only <bad-key>` exits 1.
+- A `JOBS` task with no YAML entry logs a warning and never runs (so a
+  forgotten schedule entry is visible in the logs); a YAML entry with no
+  matching `JOBS` task logs a warning and is ignored.
+
+#### Target-sheet edits (filters / sorts)
+
+Each task **fully owns** its sheet's job-managed tabs: every run clears and
+rewrites them wholesale from BigQuery. The job never reads the sheet back, so
+a user filtering or sorting the data view cannot misalign or corrupt anything
+(unlike the volunteer sheets job, which preserves partner columns and so
+forbids sorting). Consequences to know:
+- A **basic filter's** hide criteria and any **sort** applied through it do not
+  survive a refresh in a useful way: the rewrite restores canonical row order
+  and re-applies stale criteria to fresh rows. No data is lost.
+- **Filter views** (the personal, non-destructive kind) persist and are the
+  safe way to slice the data.
+- Notes typed **inside** the Read me / Signups / By session tabs are
+  overwritten every run; the README tells users to annotate on a separate tab.

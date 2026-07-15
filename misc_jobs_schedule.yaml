@@ -1,0 +1,22 @@
+# Schedule for the miscellaneous EP sync jobs.
+#
+# The Civis job runs the runner NIGHTLY (~3 AM ET). The runner runs each
+# registered task (see JOBS in run_misc_jobs.py) whose entry here is enabled
+# and whose `days` include tonight's weekday in US/Eastern. This file is how
+# you manage "which things run which nights" without touching Python.
+#
+#   enabled: true|false   -- false parks a task without deleting its entry.
+#   days:    list of weekday abbreviations (mon tue wed thu fri sat sun),
+#            OR the single string "daily" to run every night.
+#
+# Timing note: the job fires at ~3 AM ET, so a task belongs to the ET calendar
+# day it fires on. Something you think of as running "Sunday night" is really
+# the Monday 3 AM ET run -> schedule it on `mon`.
+#
+# A task registered in JOBS but missing (or disabled) here never runs; the
+# runner logs a warning so it doesn't go unnoticed.
+
+jobs:
+  event_975203_signups:
+    enabled: true
+    days: [mon]   # "Sunday night" == the Monday 3 AM ET run
