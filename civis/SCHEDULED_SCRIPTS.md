@@ -281,8 +281,8 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - **Source script:** `civis/run_misc_jobs.sh`
 - **Runs:** `app/run_misc_jobs.py` (no args)
 - **Type:** Individual (Nightly, ~3:00 AM ET)
-- **Civis job name:** *not created yet* — suggested "EP Misc Sync Jobs"
-- **Schedule:** Nightly, ~3:00 AM ET (Civis Container Script)
+- **Civis job name:** "EP Misc Sync Jobs" (Civis job id 361625051)
+- **Schedule:** Nightly at 3:00 AM ET (Civis Container Script)
 - **APIs:** BigQuery (read only), Google Sheets + Drive (write)
 - **Description:** Shared runner for small, periodic exports that don't each
   warrant their own Civis job. **One nightly job**; on each run the runner
@@ -309,13 +309,23 @@ To pause a sync without removing it, set `enabled = FALSE`.
 #### Status (2026-07-14)
 
 - Runner (nightly + YAML day-matcher), `misc_jobs/` package, schedule file, and
-  entrypoint in the repo.
+  entrypoint in the repo (pushed to `main` 2026-07-14).
 - Verified end-to-end via local run: `event_975203_signups` refreshed its
   sheet (240 signups, 232 active, 8 cancelled, 167 people), exit 0. Confirmed
   the `sheets-controllers@` SA has write access to the destination folder.
   Day-matching verified (`mon` selects the task; other nights are a clean
   exit-0 no-op).
-- **Not yet in Civis.**
+- **Live in Civis:** job "EP Misc Sync Jobs" (id 361625051), GitHub-backed,
+  scheduled nightly at 3:00 AM ET. The FL signups task fires on the Monday
+  run (`mon` in the schedule); other nights are a no-op until more tasks are
+  registered.
+- Confirm failure notifications are enabled on the job (recommended — the
+  shift job silently exited 1 for ~3 weeks before notifications were added).
+- Sanity note on the schedule timezone: the runner derives the run night from
+  the ET wall-clock weekday, so this only lines up with "Sunday night" if the
+  Civis 3:00 AM schedule is ET (as the other EP jobs are). If it were UTC
+  (~11 PM ET the prior evening) the task would land Monday night instead —
+  still weekly, just shifted.
 
 #### Civis configuration
 
