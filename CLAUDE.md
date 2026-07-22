@@ -35,6 +35,17 @@ Active credentials in `.env` (all seeded):
 - `PTV_API_KEY_PASSWORD` — PTV API key (username `colab` is the PTVConnector default; only the key is read)
 - `GOOGLE_SHEETS_CREDENTIALS_PASSWORD` — GCP SA JSON: `sheets-controllers@sheets-controllers` (member of the "2026 EP Volunteer Exports" shared drive)
 
+## PII / Data Handling
+
+Row-level PII (names, emails, phones, street addresses, gift amounts) **never gets
+committed to git** — repos here are org-visible via shared corpora and export pipelines.
+Any directory that will receive raw dumps or query results gets gitignored BEFORE the
+first file lands (allowlist known-clean file types; never enumerate known-bad files).
+Committed derivatives must be masked or aggregated; fabricate example rows in docs.
+Row-level people-data lives in access-controlled systems (BigQuery, ROI, Action Network,
+shared Sheets) — point at it, don't copy it. Full policy: knowledge library entry
+`pii-handling-policy` (`kl_get`).
+
 ## BigQuery MCP
 
 The global `bigquery` MCP is active and pre-approved for this project. Use `bq_query(sql)` and `bq_list_tables(dataset)` to query data or inspect tables without leaving the conversation. Connects to `proj-tmc-mem-com` using the shared service account.
