@@ -80,6 +80,8 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 - `bq/ep_2026_cleaned/` — committed SQL for the `ep_2026_cleaned` interface layer (views + UDFs other projects consume; normalized email/phone contract). Applied via `apply_bq_views.py` (`--check` = drift check)
 - `apply_bq_views.py` — apply/drift-check the `bq/ep_2026_cleaned/*.sql` DDL in filename (dependency) order; `--render-generated` rewrites the 3x union-view snapshots
 - `airtable_views.py` — generator for the ep_2026_cleaned Airtable union views (per-entity canonical contracts + heuristics + record-link resolution + registry `canonical_overrides`); re-run automatically at the end of every `sync_airtable_bases.py` run
+- `docs/ep_2026_cleaned_spec.md` — interface-layer spec (invariants, view contracts, union mechanism, verification suite, consumer status). Other projects consume `ep_2026_cleaned`, not raw datasets
+- `docs/airtable_bases_sync_spec.md` — Airtable capture design + the `ep_2026_raw` landing-zone contract the interface layer builds against
 - `docs/all_volunteers_sync_spec.md` — all-volunteers sync design + the deferred Airtable-leg notes
 - `docs/volunteer_sheets_spec.md` — volunteer sheets sync design (row-stability contract, registry seeding, go-live checklist)
 - `bq/shift_volunteer_sync_targets.sql` — DDL + registration contract for the sync-targets registry
