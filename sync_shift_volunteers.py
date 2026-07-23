@@ -1,28 +1,40 @@
 """
 Sync PTV shift volunteers -> BigQuery raw -> Airtable.
 
-For each enabled row in proj-tmc-mem-com.ep.shift_volunteer_sync_targets:
-  1. Pull volunteer signups from PTV's shift_volunteers_csv endpoint
-  2. Append today's snapshot to ptv_raw_2026.shift_volunteers (partitioned by as_of_date)
-  3. Query the per-volunteer view filtered to that state and upsert into the
-     target Airtable base/table on email
+Stages 1-2 (PTV -> BigQuery): pull volunteer signups from PTV's
+shift_volunteers_csv endpoint for ALL states in PULL_STATES (plus any
+registry state outside that list) and append today's snapshot to
+ptv_raw_2026.shift_volunteers (partitioned by as_of_date).
+
+Stage 3 (BigQuery -> Airtable): for each enabled row in
+proj-tmc-mem-com.ep.shift_volunteer_sync_targets, query the per-volunteer
+view filtered to that state and upsert into the target Airtable base/table
+on email. The registry drives ONLY this stage -- the BigQuery landing is
+national regardless of which states have Airtable targets.
 
 Sync targets are written by ep-airtable-utilities at base-go-live time.
 See bq/shift_volunteer_sync_targets.sql for the registry schema.
 
 Per-state and per-sync failures are isolated. Exit code is non-zero if any
-state failed to sync to BQ or any Airtable target failed to upsert.
+attempted state failed to land in BigQuery or any Airtable target failed
+to upsert.
+
+Usage:
+    python sync_shift_volunteers.py                 # all states + all targets
+    python sync_shift_volunteers.py --states NE,PA  # exact pull-set override
+    python sync_shift_volunteers.py --bq-only       # skip the Airtable leg
 """
 
 from __future__ import annotations
 
+import argparse
 import json
 import logging
 import sys
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple
 
 from dotenv import load_dotenv
 
@@ -39,6 +51,24 @@ PROJECT = "proj-tmc-mem-com"
 RAW_TABLE = f"{PROJECT}.ptv_raw_2026.shift_volunteers"
 CURRENT_VIEW = f"{PROJECT}.ptv_raw_2026.v_shift_volunteers_current"
 SYNC_TARGETS_TABLE = f"{PROJECT}.ep.shift_volunteer_sync_targets"
+
+# All 50 states + DC -- mirrors PULL_STATES in sync_all_volunteers.py (keep
+# in lockstep). shift_volunteers_csv returns [] for states with no data, so
+# pulling the full set is zero-config: empty states write no rows and new
+# program states light up automatically. The Airtable leg is unaffected --
+# it remains gated on the sync-targets registry.
+PULL_STATES: List[str] = [
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "DC", "FL", "GA", "HI",
+    "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN",
+    "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH",
+    "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA",
+    "WV", "WI", "WY",
+]
+
+# insert_rows_json sends one HTTP request with no chunking; a national pull
+# can return enough rows to threaten the streaming-insert payload limit, so
+# we batch (same pattern as sync_all_volunteers.py).
+INSERT_CHUNK = 500
 
 # Default BQ-col -> Airtable-col mapping for the canonical CC "Shifted
 # Volunteers" base schema (contact columns only). Per-target overrides
@@ -135,10 +165,12 @@ def load_config(bq: BigQueryConnector) -> Config:
         ))
 
     if not syncs:
-        raise ValueError(
-            f"No enabled sync targets in {SYNC_TARGETS_TABLE}. "
-            "Have ep-airtable-utilities register a base, or flip an "
-            "existing target's `enabled` flag to TRUE."
+        # Not fatal: the BigQuery landing (all PULL_STATES) is independently
+        # valuable. The Airtable stage simply has nothing to do.
+        logger.warning(
+            f"No enabled sync targets in {SYNC_TARGETS_TABLE} -- the "
+            "Airtable stage will be skipped. Have ep-airtable-utilities "
+            "register a base, or flip an existing target's `enabled` flag."
         )
 
     return Config(syncs=syncs, upsert_key_bq=UPSERT_KEY_BQ)
@@ -188,19 +220,26 @@ def fetch_ptv_for_states(
 # -- Stage 2: memory -> BQ --------------------------------------------------
 
 
+def _chunks(seq: List[Dict[str, Any]], n: int) -> Iterable[List[Dict[str, Any]]]:
+    for i in range(0, len(seq), n):
+        yield seq[i:i + n]
+
+
 def write_to_bq(
     bq: BigQueryConnector,
     rows_by_state: Dict[str, List[Dict[str, Any]]],
     as_of_date,
 ) -> List[str]:
     """
-    Replace today's partition rows for the given states (idempotency on rerun),
-    then append fresh. Returns list of states that wrote successfully.
+    Replace today's partition rows for the pulled states (idempotency on
+    rerun), then append fresh, per state. Returns states that landed cleanly.
     """
     states = list(rows_by_state.keys())
     if not states:
         return []
 
+    # Single pre-delete for all pulled states. Only touches states we're about
+    # to rewrite, so a PTV-failed state's prior snapshot is left intact.
     state_list_sql = ", ".join(f"'{s}'" for s in states)
     delete_sql = (
         f"DELETE FROM `{RAW_TABLE}` "
@@ -215,23 +254,19 @@ def write_to_bq(
         # exact-duplicate rows, so this is safe to skip on same-day rerun.
         logger.warning(f"[BQ] pre-delete failed (continuing): {e}")
 
-    all_rows: List[Dict[str, Any]] = []
-    for rows in rows_by_state.values():
-        all_rows.extend(rows)
-
-    if not all_rows:
-        logger.info("[BQ] no rows to insert (states pulled empty)")
-        return states
-
-    try:
-        bq.insert_rows(RAW_TABLE, all_rows)
-        logger.info(
-            f"[BQ] inserted {len(all_rows)} rows across {len(states)} states"
-        )
-        return states
-    except Exception as e:
-        logger.exception(f"[BQ] insert failed -- {e}")
-        return []
+    successful: List[str] = []
+    for state, rows in rows_by_state.items():
+        try:
+            n = 0
+            for chunk in _chunks(rows, INSERT_CHUNK):
+                bq.insert_rows(RAW_TABLE, chunk)
+                n += len(chunk)
+            if n:
+                logger.info(f"[BQ] {state}: inserted {n} rows")
+            successful.append(state)
+        except Exception as e:
+            logger.exception(f"[BQ] {state}: insert failed -- {e}")
+    return successful
 
 
 # -- Stage 3: BQ view -> Airtable -------------------------------------------
@@ -335,13 +370,32 @@ def upsert_to_airtable(
 # -- Main -------------------------------------------------------------------
 
 
-def main() -> int:
+def _parse_args(argv: List[str]) -> argparse.Namespace:
+    p = argparse.ArgumentParser(
+        description="Sync PTV shift_volunteers_csv -> BigQuery -> Airtable.",
+    )
+    p.add_argument(
+        "--states",
+        help="Comma-separated state codes to pull instead of the full set "
+             "(ops / testing). Exact override: registry targets outside the "
+             "subset are skipped without failing. e.g. --states NE,PA",
+    )
+    p.add_argument(
+        "--bq-only",
+        action="store_true",
+        help="Run the PTV -> BigQuery stages only; skip the Airtable leg.",
+    )
+    return p.parse_args(argv)
+
+
+def main(argv: List[str]) -> int:
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     )
     load_dotenv()
 
+    args = _parse_args(argv)
     as_of_date = datetime.now(timezone.utc).date()
 
     logger.info(f"=== Shift volunteers sync -- as_of_date={as_of_date} ===")
@@ -349,13 +403,22 @@ def main() -> int:
     failed_states: List[str] = []
     failed_syncs: List[str] = []
 
-    with PTVConnector() as ptv, BigQueryConnector() as bq, AirtableConnector() as at:
+    with PTVConnector() as ptv, BigQueryConnector() as bq:
         config = load_config(bq)
-        logger.info(f"States to attempt: {config.unique_states}")
+        if args.states:
+            pull_states = [
+                s.strip().upper() for s in args.states.split(",") if s.strip()
+            ]
+        else:
+            # Union so a registered target's state is always pulled, even if
+            # it's ever a code outside PULL_STATES (e.g. a territory).
+            pull_states = sorted(set(PULL_STATES) | set(config.unique_states))
+
+        logger.info(f"States to pull: {len(pull_states)}")
         logger.info(f"Sync targets: {[s.name for s in config.syncs]}")
 
         rows_by_state, ptv_failed = fetch_ptv_for_states(
-            ptv, config.unique_states, as_of_date,
+            ptv, pull_states, as_of_date,
         )
         failed_states.extend(ptv_failed)
 
@@ -364,21 +427,43 @@ def main() -> int:
             if state not in bq_successful:
                 failed_states.append(state)
 
-        view_rows = fetch_view_rows(bq, bq_successful)
-        for sync in config.syncs:
-            if sync.state not in bq_successful:
-                logger.warning(
-                    f"[AT][{sync.name}] skipped -- state {sync.state} did not sync"
-                )
-                failed_syncs.append(sync.name)
-                continue
-            try:
-                upsert_to_airtable(
-                    at, sync, view_rows.get(sync.state, []), config.upsert_key_bq,
-                )
-            except Exception as e:
-                logger.exception(f"[AT][{sync.name}] upsert failed -- {e}")
-                failed_syncs.append(sync.name)
+        if args.bq_only:
+            logger.info("[AT] skipped -- --bq-only")
+        elif not config.syncs:
+            logger.info("[AT] no enabled sync targets -- nothing to upsert")
+        else:
+            # Only the registry states' rows are read back from the view --
+            # the other ~45 states land in BQ but have no Airtable leg.
+            at_states = sorted(
+                {s.state for s in config.syncs} & set(bq_successful)
+            )
+            with AirtableConnector() as at:
+                view_rows = fetch_view_rows(bq, at_states)
+                for sync in config.syncs:
+                    if sync.state not in pull_states:
+                        # Deliberate --states subset: not a failure.
+                        logger.info(
+                            f"[AT][{sync.name}] skipped -- state {sync.state} "
+                            "not pulled this run (--states subset)"
+                        )
+                        continue
+                    if sync.state not in bq_successful:
+                        logger.warning(
+                            f"[AT][{sync.name}] skipped -- state {sync.state} "
+                            "did not sync"
+                        )
+                        failed_syncs.append(sync.name)
+                        continue
+                    try:
+                        upsert_to_airtable(
+                            at, sync, view_rows.get(sync.state, []),
+                            config.upsert_key_bq,
+                        )
+                    except Exception as e:
+                        logger.exception(
+                            f"[AT][{sync.name}] upsert failed -- {e}"
+                        )
+                        failed_syncs.append(sync.name)
 
     logger.info(
         f"=== Done. failed_states={failed_states} failed_syncs={failed_syncs} ==="
@@ -387,4 +472,4 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

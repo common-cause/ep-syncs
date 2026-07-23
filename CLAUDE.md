@@ -70,7 +70,7 @@ schema_search("volunteer", dataset="ep")                                        
 All tools are pre-approved — no confirmation needed. Docs are auto-generated from INFORMATION_SCHEMA.
 
 ## Key Files
-- `sync_shift_volunteers.py` — PTV `shift_volunteers_csv` → `ptv_raw_2026.shift_volunteers` → Airtable upsert, driven by the `ep.shift_volunteer_sync_targets` registry
+- `sync_shift_volunteers.py` — PTV `shift_volunteers_csv` (all 50 states + DC) → `ptv_raw_2026.shift_volunteers`; then Airtable upsert for each enabled `ep.shift_volunteer_sync_targets` row (the registry drives ONLY the Airtable leg — the BQ landing is national)
 - `sync_all_volunteers.py` — PTV `users_csv` (all registered volunteers) → `ptv_raw_2026.users`; BQ-only, no Airtable leg yet
 - `sync_volunteer_sheets.py` — BQ roster → Google Sheets exports (one sheet per state, one per partner source code) in the "2026 EP Volunteer Exports" shared drive; partner-edit-safe (hidden `_data` tab + formula mirror), driven by the `ep.volunteer_sheet_targets` registry
 - `run_misc_jobs.py` — shared runner for small, periodic exports that don't each warrant their own Civis job; one nightly Civis job (~3 AM ET) runs the tasks scheduled for tonight's ET weekday. Task identity lives in the `JOBS` registry; task timing lives in `misc_jobs_schedule.yaml`. Per-task failures isolated. Add a task = new `misc_jobs/` module with `run()` + a `JOBS` row + a YAML entry
@@ -86,7 +86,9 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 
 ## How to Run
 ```bash
-python sync_shift_volunteers.py                    # shift sync (all enabled registry targets)
+python sync_shift_volunteers.py                    # shift sync (all states → BQ, registry targets → Airtable)
+python sync_shift_volunteers.py --states NE,PA     # exact pull-set override (ops/testing)
+python sync_shift_volunteers.py --bq-only          # skip the Airtable leg
 python sync_all_volunteers.py                      # all-volunteers sync (all 50 states + DC)
 python sync_all_volunteers.py --states NE,PA       # subset override for ops/testing
 python sync_volunteer_sheets.py                    # volunteer sheets sync (all enabled registry targets)
@@ -99,6 +101,6 @@ python run_misc_jobs.py --list                     # list registered misc tasks 
 All read credentials from `.env` locally; in Civis they run as scheduled
 GitHub-backed container jobs (shift sync daily 6:00 AM ET, all-volunteers
 daily 6:30 AM ET, volunteer sheets not yet scheduled — planned 7:00 AM ET,
-misc jobs not yet scheduled — planned nightly ~3:00 AM ET, self-selecting
-tasks per `misc_jobs_schedule.yaml`)
+misc jobs nightly 3:00 AM ET, self-selecting tasks per
+`misc_jobs_schedule.yaml`)
 — see `civis/SCHEDULED_SCRIPTS.md` before touching schedules.

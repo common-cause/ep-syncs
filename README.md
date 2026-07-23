@@ -19,14 +19,21 @@ cp .env.example .env
 
 ### Shift volunteers sync
 
-Pulls volunteer signups from PTV's `shift_volunteers_csv` endpoint per state,
-appends a daily snapshot to `ptv_raw_2026.shift_volunteers` (date-partitioned
-on `as_of_date`), then upserts a per-volunteer summary into Airtable for each
-enabled target in `proj-tmc-mem-com.ep.shift_volunteer_sync_targets`.
+Pulls volunteer signups from PTV's `shift_volunteers_csv` endpoint for all
+50 states + DC, appends a daily snapshot to `ptv_raw_2026.shift_volunteers`
+(date-partitioned on `as_of_date`, inserts chunked at 500 rows/request),
+then upserts a per-volunteer summary into Airtable for each enabled target
+in `proj-tmc-mem-com.ep.shift_volunteer_sync_targets`. The registry drives
+only the Airtable leg — the BigQuery landing is national.
 
 ```bash
-python sync_shift_volunteers.py
+python sync_shift_volunteers.py                 # all states + all targets
+python sync_shift_volunteers.py --states NE,PA  # exact pull-set override (ops/testing)
+python sync_shift_volunteers.py --bq-only       # PTV -> BQ only, skip Airtable
 ```
+
+With a `--states` subset, registry targets outside the subset are skipped
+without counting as failures.
 
 Designed to be scheduled in Civis. Reads credentials from environment
 variables (Civis injects these from Civis Credentials).

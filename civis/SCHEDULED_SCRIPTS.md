@@ -1,7 +1,7 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-06-04 (shift sync). All-volunteers sync added + scheduled
-in Civis 2026-07-02.*
+*Last verified: 2026-07-23 (shift sync decoupled to a national pull).
+All-volunteers sync added + scheduled in Civis 2026-07-02.*
 
 Source-of-truth for what's scheduled in Civis from this repo. Jobs are
 **GitHub-backed**: the Civis job attaches this repo (branch `main`),
@@ -20,14 +20,23 @@ this doc when a job is created, renamed, rescheduled, or retired.
 - **Type:** Individual (Daily at 6:00 AM ET)
 - **Civis job name:** EP Shift Volunteer Sync
 - **Schedule:** Daily at 6:00 AM ET (Civis Container Script)
-- **APIs:** PTV (no documented rate limit), BigQuery (read/write), Airtable (~5 req/s/base)
-- **Description:** For each enabled row in
-  `proj-tmc-mem-com.ep.shift_volunteer_sync_targets`, pulls
-  `shift_volunteers_csv` from PTV, appends a daily snapshot to
+- **APIs:** PTV (no documented rate limit; ~51 calls/run), BigQuery
+  (read/write), Airtable (~5 req/s/base)
+- **Description:** Pulls `shift_volunteers_csv` from PTV for **all 50
+  states + DC** (`PULL_STATES`, unioned with any registry state outside
+  that list) and appends a daily snapshot to
   `proj-tmc-mem-com.ptv_raw_2026.shift_volunteers` (date-partitioned
-  on `as_of_date`), then upserts a per-volunteer summary into the
-  target Airtable base on email. Per-state and per-sync failures are
-  isolated; exit code is non-zero if any state or sync target failed.
+  on `as_of_date`, inserts chunked at 500 rows/request). Then, for each
+  enabled row in `proj-tmc-mem-com.ep.shift_volunteer_sync_targets`,
+  upserts a per-volunteer summary into the target Airtable base on
+  email — **the registry drives only this Airtable leg** (decoupled
+  2026-07-23; before that the BQ pull was limited to registry states).
+  Per-state and per-sync failures are isolated; exit code is non-zero
+  if any attempted state or sync target failed.
+- **CLI (local ops/testing):** `--states NE,PA` pulls exactly that
+  subset — registry targets outside the subset are skipped *without*
+  failing (deliberate subsetting isn't an error); `--bq-only` skips the
+  Airtable leg entirely (doesn't need the Airtable credential).
 
 #### Civis configuration
 
