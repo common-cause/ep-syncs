@@ -4,9 +4,13 @@
 -- All-time: rows never disappear (current-state consumers filter is_active).
 -- This matches the append-only roster contract sync_volunteer_sheets.py needs.
 --
--- Phase 2 will add a second UNION branch for Airtable "Shifted Volunteers"
--- records with no PTV counterpart (emergency self-add form): in_ptv = FALSE,
--- source_system = 'airtable_self_add'. Until then in_ptv is always TRUE.
+-- Two branches:
+--   'ptv' -- every (state, email) ever seen in ptv_raw_2026.users.
+--   'airtable_self_add' -- Airtable "Shifted Volunteers" records (via the
+--   generated ep_2026_cleaned.shifted_volunteers union, which is why this
+--   file sorts AFTER the 3x generated views) whose (state, email) has no
+--   PTV counterpart -- the emergency self-add form's output. A self-add who
+--   later registers in PTV flips to the PTV branch on the next capture.
 --
 -- is_bulk_upload / joined_this_cycle are lifted from ep-dashboards
 -- stg_ptv__users (vars: ep_cycle_start='2025-12-01',
@@ -14,7 +18,7 @@
 -- ep-dashboards re-points here. Keep the constants in lockstep.
 
 CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.volunteers`
-OPTIONS(description="All-time 2026 EP volunteer roster: one row per (state, email) ever seen in PTV (ptv_raw_2026.users). Rows never disappear; filter is_active for the current roster. email/phone normalized (norm_email/norm_phone); email_raw preserves the as-delivered value. Attributes come from the person's newest snapshot row; shift rollups derive from ep_2026_cleaned.shift_signups. is_bulk_upload flags prior-year bulk loads (source_code='previous_years' or >=100 joins in the same state+hour) — flagged, never filtered. joined_this_cycle = joined_at >= 2025-12-01. Freshness: ptv_as_of_date.")
+OPTIONS(description="All-time 2026 EP volunteer roster: one row per (state, email) ever seen in PTV (ptv_raw_2026.users) UNION Airtable self-adds with no PTV counterpart (source_system='airtable_self_add', in_ptv=FALSE, from the emergency self-add form). Rows never disappear; filter is_active for the current roster. email/phone normalized (norm_email/norm_phone); email_raw preserves the as-delivered value. Attributes come from the person's newest snapshot row; shift rollups derive from ep_2026_cleaned.shift_signups. is_bulk_upload flags prior-year bulk loads (source_code='previous_years' or >=100 joins in the same state+hour) — flagged, never filtered. joined_this_cycle = joined_at >= 2025-12-01 (self-adds: Airtable record creation). Freshness: ptv_as_of_date (NULL on self-add rows — check sync_health for the Airtable stream).")
 AS
 WITH latest AS (
   SELECT state, MAX(as_of_date) AS as_of_date
@@ -124,4 +128,52 @@ LEFT JOIN hourly_counts h
   ON h.state = p.state
  AND h.join_hour = TIMESTAMP_TRUNC(p.joined_at, HOUR)
 LEFT JOIN shift_rollup s
-  ON s.state = p.state AND s.email = p.email;
+  ON s.state = p.state AND s.email = p.email
+
+UNION ALL
+
+-- Airtable self-adds: Shifted Volunteers records with no PTV counterpart
+-- (state, email) anywhere in the PTV snapshots. Typed captures are
+-- current-state, so any row here is present in the latest sync.
+SELECT
+  sv.state,
+  sv.email,
+  sv.email_raw,
+  sv.first_name,
+  sv.last_name,
+  sv.phone,
+  sv.county,
+  sv.zip_code,
+  CAST(NULL AS STRING)                                        AS role,
+  CAST(NULL AS STRING)                                        AS source_code,
+  CAST([] AS ARRAY<STRING>)                                   AS source_codes_ever,
+  CAST(NULL AS STRING)                                        AS training,
+  sv.created_at                                               AS joined_at,
+  COALESCE(sv.created_at >= TIMESTAMP('2025-12-01'), FALSE)   AS joined_this_cycle,
+  FALSE                                                       AS is_bulk_upload,
+  CAST(NULL AS INT64)                                         AS ptv_id,
+  CAST(NULL AS STRING)                                        AS ptv_shifted_flag,
+  COALESCE(s.shift_count, 0)                                  AS shift_count,
+  COALESCE(s.upcoming_shift_count, 0)                         AS upcoming_shift_count,
+  s.first_shift_date,
+  s.latest_shift_date,
+  FALSE                                                       AS in_ptv,
+  'airtable_self_add'                                         AS source_system,
+  TRUE                                                        AS is_active,
+  DATE(sv.created_at)                                         AS first_seen_date,
+  DATE(sv.synced_at)                                          AS last_seen_date,
+  CAST(NULL AS DATE)                                          AS ptv_as_of_date
+FROM `proj-tmc-mem-com.ep_2026_cleaned.shifted_volunteers` sv
+LEFT JOIN shift_rollup s
+  ON s.state = sv.state AND s.email = sv.email
+WHERE sv.email IS NOT NULL
+  AND NOT EXISTS (
+    SELECT 1
+    FROM `proj-tmc-mem-com.ptv_raw_2026.users` u
+    WHERE u.state = sv.state
+      AND `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(u.email) = sv.email
+  )
+QUALIFY ROW_NUMBER() OVER (
+  PARTITION BY sv.state, sv.email
+  ORDER BY sv.created_at DESC
+) = 1;

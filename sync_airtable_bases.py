@@ -512,6 +512,17 @@ def main(argv: List[str]) -> int:
                 logger.exception(f"[{entry.bq_table_prefix}] base FAILED -- {e}")
                 failed_bases.append(entry.bq_table_prefix)
 
+        # Regenerate + redeploy the ep_2026_cleaned union views so a base
+        # going live (new registry row) is included the same run. Also
+        # rewrites the committed bq/ep_2026_cleaned/3x_*.sql snapshots when
+        # running locally (no-op churn in Civis's throwaway clone).
+        try:
+            import airtable_views
+            airtable_views.render_write_apply(bq)
+        except Exception as e:
+            logger.exception(f"[views] union-view regeneration FAILED -- {e}")
+            failed_tables.append("ep_2026_cleaned view regeneration")
+
     logger.info(
         f"=== Done. bases_ok={bases_ok}/{len(enabled)} tables_ok={total_tables} "
         f"rows_typed={total_rows} failed_bases={failed_bases} "

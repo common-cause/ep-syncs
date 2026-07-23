@@ -13,10 +13,16 @@ File conventions (relied on by --check):
   - The view body's opening `AS` sits ALONE on its own line; everything
     after that line is the body compared against INFORMATION_SCHEMA.VIEWS.
 
+The 3x_*.sql files are GENERATED review snapshots (airtable_views.py
+renders them from the base registry + landed columns; the capture sync
+also re-applies them after every run). Refresh them with
+--render-generated, then commit.
+
 Usage:
     python apply_bq_views.py                        # apply all, in order
-    python apply_bq_views.py --only 11_volunteers.sql
+    python apply_bq_views.py --only 40_volunteers.sql
     python apply_bq_views.py --check                # committed vs deployed
+    python apply_bq_views.py --render-generated     # rewrite 3x_*.sql snapshots
 """
 
 from __future__ import annotations
@@ -138,6 +144,12 @@ def _parse_args(argv: List[str]) -> argparse.Namespace:
         help="Compare committed view SQL against deployed definitions; "
              "exit non-zero on drift. Applies nothing.",
     )
+    p.add_argument(
+        "--render-generated",
+        action="store_true",
+        help="Regenerate the 3x_*.sql union-view snapshots from the base "
+             "registry + landed columns (writes files, applies nothing).",
+    )
     return p.parse_args(argv)
 
 
@@ -148,6 +160,11 @@ def main(argv: List[str]) -> int:
     )
     load_dotenv()
     args = _parse_args(argv)
+    if args.render_generated:
+        import airtable_views
+        with BigQueryConnector() as bq:
+            airtable_views.write_snapshots(airtable_views.render_entity_views(bq))
+        return 0
     files = iter_sql_files(args.only)
     with BigQueryConnector() as bq:
         if args.check:
