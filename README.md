@@ -76,6 +76,40 @@ are chunked (500 rows/request) because `users_csv` returns tens of thousands
 of rows. Live in Civis as "All Volunteers Sync" (daily 6:30 AM ET) — see
 `civis/SCHEDULED_SCRIPTS.md`.
 
+### Airtable bases capture
+
+Captures every table in every registered Airtable base (field-report and
+quiz bases; registry `ep.airtable_sync_sources`) into `ep_2026_raw`:
+typed per-(base, table) tables rebuilt each run (full-replace,
+schema-drift-proof — columns/types re-derive from Airtable field metadata),
+plus an append-only JSON history (`ep_2026_raw.airtable_records_history`,
+one row per record per run). Read-only toward Airtable. Landing-zone
+contract: `docs/airtable_bases_sync_spec.md`.
+
+```bash
+python sync_airtable_bases.py                          # all enabled bases
+python sync_airtable_bases.py --bases ne_field_report  # subset (ops / testing)
+python sync_airtable_bases.py --list                   # discovery review, writes nothing
+python sync_airtable_bases.py --check-access           # PAT gate, incl. disabled rows
+```
+
+Adding a base = inserting a registry row (contract in
+`bq/airtable_sync_sources.sql`); ep-airtable-utilities does this at base
+go-live. Per-base and per-table failures are isolated.
+
+### Interface layer (`ep_2026_cleaned`)
+
+BigQuery views other projects query instead of raw tables: normalized
+email/phone (via `norm_email`/`norm_phone` UDFs), `volunteers` (all-time
+roster), `shift_signups` (event grain), `sync_health` (staleness), with
+Airtable-derived union views arriving as the capture matures. SQL is
+committed under `bq/ep_2026_cleaned/` and applied with:
+
+```bash
+python apply_bq_views.py           # apply all, in dependency order
+python apply_bq_views.py --check   # drift check: committed vs deployed
+```
+
 ### Volunteer sheets sync
 
 Maintains coalition/state-facing Google Sheets from the BQ volunteer roster:

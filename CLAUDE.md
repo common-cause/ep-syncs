@@ -72,6 +72,7 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 ## Key Files
 - `sync_shift_volunteers.py` — PTV `shift_volunteers_csv` (all 50 states + DC) → `ptv_raw_2026.shift_volunteers`; then Airtable upsert for each enabled `ep.shift_volunteer_sync_targets` row (the registry drives ONLY the Airtable leg — the BQ landing is national)
 - `sync_all_volunteers.py` — PTV `users_csv` (all registered volunteers) → `ptv_raw_2026.users`; BQ-only, no Airtable leg yet
+- `sync_airtable_bases.py` — registered Airtable bases → `ep_2026_raw` (typed per-(base,table) tables rebuilt each run + JSON history), driven by the `ep.airtable_sync_sources` registry; READ-ONLY toward Airtable. Design: `docs/airtable_bases_sync_spec.md`
 - `sync_volunteer_sheets.py` — BQ roster → Google Sheets exports (one sheet per state, one per partner source code) in the "2026 EP Volunteer Exports" shared drive; partner-edit-safe (hidden `_data` tab + formula mirror), driven by the `ep.volunteer_sheet_targets` registry
 - `run_misc_jobs.py` — shared runner for small, periodic exports that don't each warrant their own Civis job; one nightly Civis job (~3 AM ET) runs the tasks scheduled for tonight's ET weekday. Task identity lives in the `JOBS` registry; task timing lives in `misc_jobs_schedule.yaml`. Per-task failures isolated. Add a task = new `misc_jobs/` module with `run()` + a `JOBS` row + a YAML entry
 - `misc_jobs/` — task modules for `run_misc_jobs.py`; today `event_975203_signups.py` (Mobilize event 975203 FL-training signups → Google Sheet)
@@ -81,6 +82,8 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 - `docs/all_volunteers_sync_spec.md` — all-volunteers sync design + the deferred Airtable-leg notes
 - `docs/volunteer_sheets_spec.md` — volunteer sheets sync design (row-stability contract, registry seeding, go-live checklist)
 - `bq/shift_volunteer_sync_targets.sql` — DDL + registration contract for the sync-targets registry
+- `bq/airtable_sync_sources.sql` — DDL + registration contract + seeds for the Airtable base registry (insert an enabled row = start capturing a base)
+- `bq/airtable_records_history.sql` — DDL for the append-only JSON history of every captured Airtable record (incl. the ROW_NUMBER dedupe recipe — JSON cols can't SELECT DISTINCT)
 - `bq/volunteer_sheet_targets.sql` — DDL + seeds for the sheet-targets registry (insert an enabled row = provision a sheet)
 - `civis/SCHEDULED_SCRIPTS.md` — source-of-truth for the Civis jobs (schedules, credentials, failure modes); the `civis/*.sh` files are the real job bodies
 - `count_2025_volunteers.py` — one-off counting script (not scheduled)
@@ -93,6 +96,10 @@ python sync_shift_volunteers.py --states NE,PA     # exact pull-set override (op
 python sync_shift_volunteers.py --bq-only          # skip the Airtable leg
 python sync_all_volunteers.py                      # all-volunteers sync (all 50 states + DC)
 python sync_all_volunteers.py --states NE,PA       # subset override for ops/testing
+python sync_airtable_bases.py                      # Airtable capture (all enabled registry bases)
+python sync_airtable_bases.py --bases ne_field_report,ut_quiz  # subset (ops/testing)
+python sync_airtable_bases.py --list               # show discovered tables, write nothing
+python sync_airtable_bases.py --check-access       # PAT coverage incl. disabled rows
 python sync_volunteer_sheets.py                    # volunteer sheets sync (all enabled registry targets)
 python sync_volunteer_sheets.py --targets NE,aclum # subset override for ops/testing
 python run_misc_jobs.py                            # misc jobs scheduled for tonight (ET weekday)
@@ -102,7 +109,8 @@ python run_misc_jobs.py --list                     # list registered misc tasks 
 ```
 All read credentials from `.env` locally; in Civis they run as scheduled
 GitHub-backed container jobs (shift sync daily 6:00 AM ET, all-volunteers
-daily 6:30 AM ET, volunteer sheets not yet scheduled — planned 7:00 AM ET,
+daily 6:30 AM ET, Airtable capture not yet scheduled — planned 6:45 AM ET,
+volunteer sheets not yet scheduled — planned 7:00 AM ET,
 misc jobs nightly 3:00 AM ET, self-selecting tasks per
 `misc_jobs_schedule.yaml`)
 — see `civis/SCHEDULED_SCRIPTS.md` before touching schedules.

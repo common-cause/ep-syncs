@@ -285,6 +285,103 @@ To pause a sync without removing it, set `enabled = FALSE`.
   that no enabled target covers — watch these for new partner codes to
   register.
 
+### sync_airtable_bases.sh
+
+- **Source script:** `civis/sync_airtable_bases.sh`
+- **Runs:** `app/sync_airtable_bases.py`
+- **Type:** Individual (Daily at 6:45 AM ET)
+- **Civis job name:** *not created yet* — suggested "EP Airtable Bases Sync"
+- **Schedule:** Daily at 6:45 AM ET (Civis Container Script)
+- **APIs:** Airtable (read only — records + metadata; ~5 req/s/base,
+  sequential, pyairtable retries 429s), BigQuery (read `ep`, write
+  `ep_2026_raw`). No PTV.
+- **Description:** For each enabled row in
+  `proj-tmc-mem-com.ep.airtable_sync_sources`, discovers every table in
+  the Airtable base (minus `exclude_tables`) and captures it into
+  `ep_2026_raw`: TYPED per-(base, table) tables rebuilt each run
+  (`{prefix}__{table}`, full-replace via load job — schema-drift-proof,
+  columns/types re-derived from Airtable field metadata every run), plus
+  one JSON-payload row per record appended to
+  `ep_2026_raw.airtable_records_history` (as_of_date-partitioned audit
+  trail). READ-ONLY toward Airtable — never writes or deletes records.
+  Per-base and per-table failures isolated; exit non-zero on any failure.
+  Design: `docs/airtable_bases_sync_spec.md`; registry contract:
+  `bq/airtable_sync_sources.sql`.
+- **Schedule rationale:** the shift sync's Airtable-upsert leg runs at
+  6:00 and finishes within minutes; capturing at 6:45 means the day's
+  snapshot of every "Shifted Volunteers" table INCLUDES that morning's
+  upserts, so the `ep_2026_cleaned` interface layer sees a coherent
+  morning state across `ptv_raw_2026` (landed 6:00/6:30) and
+  `ep_2026_raw`. No API contention with the 6:30 all-vols job
+  (different APIs).
+
+#### Status (2026-07-23)
+
+- BQ objects created (`ep.airtable_sync_sources` registry seeded with 14
+  bases — 6 field-report + 8 quiz, all PAT-verified via `--check-access`
+  and enabled; `ep_2026_raw.airtable_records_history`).
+- Script + entrypoint in the repo. Verified end-to-end via local runs:
+  full run captured 14/14 bases, 34 tables, 2,335 rows, exit 0;
+  `JSON_VALUE` extraction on the history JSON column confirmed working;
+  same-day rerun idempotency confirmed (ROW_NUMBER dedupe recipe returns
+  exactly one row per record).
+- **Not yet in Civis.**
+
+#### Civis configuration
+
+| Field | Value |
+|---|---|
+| Source repo | `common-cause/ep-syncs` |
+| Branch | `main` |
+| Docker image | `civisanalytics/datascience-python:latest` |
+| Command | `bash app/civis/sync_airtable_bases.sh` |
+
+#### Credentials to attach
+
+- `BIGQUERY_CREDENTIALS` — service account JSON in password field (reuse
+  Civis credential ID 38653). Needs read on `ep` (registry) and
+  read/write on `ep_2026_raw` — **verify the `com-dbt@` SA's grant on
+  `ep_2026_raw` before the first scheduled run** (prior grants were
+  scoped to `ptv_raw_2026`/`ep`; local verification ran as the same SA,
+  so if local runs worked this is already in place).
+- `AIRTABLE_API_KEY` — Airtable PAT in password field (reuse ID 38226,
+  the "sync operations" token). Needs `schema.bases:read` +
+  `data.records:read` and per-base access to every registered base
+  (validated at registration; `--check-access` re-verifies).
+- *No PTV credential needed.*
+- **Enable failure notifications at creation time** (the shift job
+  silently exited 1 for ~3 weeks before notifications were added).
+
+#### Scheduling notes
+
+- Daily at 6:45 AM ET. Runtime is minutes (14 bases, sequential; ~1
+  request per 100 records per table + 1 schema call per base).
+- Adding a base = inserting a registry row (see
+  `bq/airtable_sync_sources.sql` for the contract — insert disabled,
+  `--check-access`, review `--list`, enable). No Civis-side or repo-side
+  change. ep-airtable-utilities does this at base go-live.
+- In-season cadence can increase like the other jobs; the history
+  partition key is `as_of_date` (DATE), so intra-day runs collapse into
+  one partition value (the ROW_NUMBER dedupe recipe handles it — reads
+  stay correct, you just can't reconstruct intra-day history).
+
+#### Failure mode
+
+- Per-base and per-table failures are isolated; exit non-zero if any
+  enabled base or table failed.
+- Streaming-buffer DML warnings on the history pre-delete during
+  same-window reruns (~30-90 min) are expected and benign — readers
+  dedupe via the ROW_NUMBER recipe in `bq/airtable_records_history.sql`.
+- A 403 on one base (PAT lost access) fails that base only; fix the PAT
+  or set the row `enabled = FALSE` with a `notes` explaining why.
+- **Renaming an Airtable table orphans its old typed table** (the sync
+  lands the new name next run; the old `{prefix}__{old_name}` table
+  stays frozen). Drop the orphan manually. Same applies to changing a
+  row's `bq_table_prefix`.
+- An Airtable field-type change changes the BQ column type on the next
+  run (by design — full replace). `ep_2026_cleaned` views CAST
+  defensively; the history JSON is the recovery path for anything lost.
+
 ### run_misc_jobs.sh
 
 - **Source script:** `civis/run_misc_jobs.sh`
