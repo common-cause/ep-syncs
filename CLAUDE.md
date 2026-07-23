@@ -76,6 +76,8 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 - `run_misc_jobs.py` — shared runner for small, periodic exports that don't each warrant their own Civis job; one nightly Civis job (~3 AM ET) runs the tasks scheduled for tonight's ET weekday. Task identity lives in the `JOBS` registry; task timing lives in `misc_jobs_schedule.yaml`. Per-task failures isolated. Add a task = new `misc_jobs/` module with `run()` + a `JOBS` row + a YAML entry
 - `misc_jobs/` — task modules for `run_misc_jobs.py`; today `event_975203_signups.py` (Mobilize event 975203 FL-training signups → Google Sheet)
 - `misc_jobs_schedule.yaml` — per-task night-of-week schedule for `run_misc_jobs.py` (edit + push to re-time a task; no Civis change)
+- `bq/ep_2026_cleaned/` — committed SQL for the `ep_2026_cleaned` interface layer (views + UDFs other projects consume; normalized email/phone contract). Applied via `apply_bq_views.py` (`--check` = drift check)
+- `apply_bq_views.py` — apply/drift-check the `bq/ep_2026_cleaned/*.sql` DDL in filename (dependency) order
 - `docs/all_volunteers_sync_spec.md` — all-volunteers sync design + the deferred Airtable-leg notes
 - `docs/volunteer_sheets_spec.md` — volunteer sheets sync design (row-stability contract, registry seeding, go-live checklist)
 - `bq/shift_volunteer_sync_targets.sql` — DDL + registration contract for the sync-targets registry
