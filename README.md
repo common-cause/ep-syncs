@@ -15,6 +15,16 @@ cp .env.example .env
 # Edit .env with your credentials
 ```
 
+PTV has **no admin API**, so the trainings sync (`sync_ptv_trainings.py`) drives
+a browser session instead. If you run it, also install the `ptv-tools` package
+(the shared PTV browser-session layer) and a Playwright browser, once per
+machine:
+
+```bash
+pip install -e "C:/Users/RobKerth/OneDrive - Common Cause Education Fund/Documents/Claude/Projects/ptv-tools"
+playwright install chromium
+```
+
 ## Usage
 
 ### Shift volunteers sync
@@ -75,6 +85,35 @@ Same idempotency and per-state failure isolation as the shift sync. Inserts
 are chunked (500 rows/request) because `users_csv` returns tens of thousands
 of rows. Live in Civis as "All Volunteers Sync" (daily 6:30 AM ET) — see
 `civis/SCHEDULED_SCRIPTS.md`.
+
+### PTV trainings sync
+
+Captures training **signup records** from the PTV admin GUI — data PTV exposes
+through no API — into `ptv_raw_2026.training_signups` (one row per training
+session × attendee; daily snapshot, date-partitioned on `as_of_date`, clustered
+by `state, email`). For each state it walks the trainings list → each training's
+sessions → each session's attendee roster, capturing a **real signup timestamp**,
+training id/name, session date, role, and registration status/attended. This
+replaces the weak signal downstream dashboards used before (PTV's flat
+`users.training` string with snapshot-*inferred* dates). On-demand trainings
+(no scheduled session) are handled via the training-level roster.
+
+Unlike the CSV-API syncs, this rides a **browser session** (the `ptv-tools`
+package) because PTV has no admin API. State scoping is **verified** before each
+state is scraped — it refuses to scrape a state whose context it can't confirm.
+
+```bash
+python sync_ptv_trainings.py                 # all states + DC -> BQ
+python sync_ptv_trainings.py --states OH,PA  # subset (ops / testing)
+python sync_ptv_trainings.py --list          # print current state's trainings; no switch, no write
+```
+
+Same per-state failure isolation and same-day partition idempotency as the
+other syncs (consumers dedupe on `(as_of_date, registration_id)`). **Local-only,
+not a Civis job** — the browser automation and Outlook magic-code login are
+inherently local; the target is a ~4 AM local scheduled task that self-heals its
+own auth (verifies headless, re-logs-in headed via Outlook only if the session
+died). Design: `docs/ptv_trainings_sync_spec.md`.
 
 ### Airtable bases capture
 
@@ -168,25 +207,37 @@ ep-syncs/
 ├── README.md
 ├── requirements.txt
 ├── bq/
+│   ├── ep_2026_cleaned/                  # SQL for the ep_2026_cleaned interface layer (applied via apply_bq_views.py)
+│   ├── airtable_sync_sources.sql         # DDL + seeds for the Airtable base registry
+│   ├── airtable_records_history.sql      # DDL for the append-only Airtable JSON history
+│   ├── ptv_training_signups.sql          # DDL for the PTV training-signups landing table
 │   ├── shift_volunteer_sync_targets.sql  # DDL for the shift-sync targets registry table
 │   └── volunteer_sheet_targets.sql       # DDL + seeds for the sheets-sync targets registry
 ├── civis/
 │   ├── sync_shift_volunteers.sh          # Civis Container Script body (shift sync)
 │   ├── sync_all_volunteers.sh            # Civis Container Script body (all-volunteers sync)
+│   ├── sync_airtable_bases.sh            # Civis Container Script body (Airtable capture)
 │   ├── sync_volunteer_sheets.sh          # Civis Container Script body (volunteer sheets sync)
 │   ├── run_misc_jobs.sh                  # Civis Container Script body (misc jobs runner)
 │   └── SCHEDULED_SCRIPTS.md              # Civis job source-of-truth
 ├── docs/
+│   ├── airtable_bases_sync_spec.md       # Airtable capture design + ep_2026_raw landing contract
 │   ├── all_volunteers_sync_spec.md       # All-volunteers sync design + deferred Airtable notes
+│   ├── ep_2026_cleaned_spec.md           # ep_2026_cleaned interface-layer spec
+│   ├── ptv_trainings_sync_spec.md        # PTV trainings GUI-scrape design + table contract (local-only sync)
 │   └── volunteer_sheets_spec.md          # Volunteer sheets sync design (BQ -> Google Sheets)
 ├── misc_jobs/                            # Task modules for run_misc_jobs.py (one run() per task)
 │   └── event_975203_signups.py           # Mobilize event 975203 FL-training signups -> Google Sheet
 ├── misc_jobs_schedule.yaml               # Per-task night-of-week schedule for run_misc_jobs.py
+├── apply_bq_views.py                     # Apply / drift-check bq/ep_2026_cleaned/*.sql (dependency order)
+├── airtable_views.py                     # Generator for the ep_2026_cleaned Airtable union views
 ├── count_2025_volunteers.py              # One-off: count unique 2025 shift volunteers
 ├── parsons test.py                       # Legacy pre-ccef-connections reference — do not copy patterns
 ├── ptv_sync.py                           # Legacy pre-ccef-connections reference — do not copy patterns
 ├── run_misc_jobs.py                      # Misc jobs runner (nightly; self-selects by ET weekday)
 ├── sync_shift_volunteers.py              # PTV shift_volunteers_csv -> BQ -> Airtable sync
 ├── sync_all_volunteers.py                # PTV users_csv -> BQ sync (no Airtable leg)
+├── sync_airtable_bases.py                # Airtable bases -> ep_2026_raw capture (typed tables + JSON history)
+├── sync_ptv_trainings.py                 # PTV trainings GUI -> BQ signup records (browser via ptv-tools; local-only)
 └── sync_volunteer_sheets.py              # BQ roster -> Google Sheets exports (states + partners)
 ```

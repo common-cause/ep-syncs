@@ -25,6 +25,15 @@ Civis jobs install it pinned to a release tag from GitHub instead — see the
 Spec it out and build it *in `ccef-connections`*, then import it here.
 Do not duplicate connection logic in individual projects.
 
+**PTV admin GUI (no API) uses the `ptv-tools` package, not ccef-connections.**
+PTV has no admin API, so training signups and other admin-only data ride an
+authenticated Playwright browser session. `ptv-tools` (installed editable, like
+ccef-connections; owns login/session/verified state-scoping) is the session
+layer; the operational scrapers (e.g. `sync_ptv_trainings.py`) live here. The
+read-only CSV *API* (`users_csv`, `shift_volunteers_csv`) still goes through
+ccef-connections' `PTVConnector`. Requires `PTV_ADMIN_EMAIL` in `.env` and a
+saved session at `~/.ptv-tools/storage_state.json` (per-machine).
+
 ## Credential Pattern
 All credentials follow `{CREDENTIAL_NAME}_PASSWORD` in `.env` (Civis-compatible).
 JSON credentials are stored as unquoted JSON strings. Never commit `.env`.
@@ -72,6 +81,7 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 ## Key Files
 - `sync_shift_volunteers.py` — PTV `shift_volunteers_csv` (all 50 states + DC) → `ptv_raw_2026.shift_volunteers`; then Airtable upsert for each enabled `ep.shift_volunteer_sync_targets` row (the registry drives ONLY the Airtable leg — the BQ landing is national)
 - `sync_all_volunteers.py` — PTV `users_csv` (all registered volunteers) → `ptv_raw_2026.users`; BQ-only, no Airtable leg yet
+- `sync_ptv_trainings.py` — PTV **admin GUI** training signups (no API exists) → `ptv_raw_2026.training_signups`, one row per (session, attendee) with a REAL signup timestamp + status/attended/role. Browser automation via the `ptv-tools` package (session layer), verified per-state scoping, daily snapshot partitioned by `as_of_date`. Iterates all states; scheduled/on-demand trainings both handled. BQ-only; built + **validated full 50+DC run (2,603 rows / 19 states / 0 failures / ~16 min)**. **Local-only, not Civis** — browser + Outlook magic-code login are inherently local; target is a ~4 AM local scheduled task that self-heals its own auth. Design: `docs/ptv_trainings_sync_spec.md`
 - `sync_airtable_bases.py` — registered Airtable bases → `ep_2026_raw` (typed per-(base,table) tables rebuilt each run + JSON history), driven by the `ep.airtable_sync_sources` registry; READ-ONLY toward Airtable. Design: `docs/airtable_bases_sync_spec.md`
 - `sync_volunteer_sheets.py` — BQ roster → Google Sheets exports (one sheet per state, one per partner source code) in the "2026 EP Volunteer Exports" shared drive; partner-edit-safe (hidden `_data` tab + formula mirror), driven by the `ep.volunteer_sheet_targets` registry
 - `run_misc_jobs.py` — shared runner for small, periodic exports that don't each warrant their own Civis job; one nightly Civis job (~3 AM ET) runs the tasks scheduled for tonight's ET weekday. Task identity lives in the `JOBS` registry; task timing lives in `misc_jobs_schedule.yaml`. Per-task failures isolated. Add a task = new `misc_jobs/` module with `run()` + a `JOBS` row + a YAML entry
@@ -83,6 +93,8 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 - `docs/ep_2026_cleaned_spec.md` — interface-layer spec (invariants, view contracts, union mechanism, verification suite, consumer status). Other projects consume `ep_2026_cleaned`, not raw datasets
 - `docs/airtable_bases_sync_spec.md` — Airtable capture design + the `ep_2026_raw` landing-zone contract the interface layer builds against
 - `docs/all_volunteers_sync_spec.md` — all-volunteers sync design + the deferred Airtable-leg notes
+- `docs/ptv_trainings_sync_spec.md` — PTV trainings GUI-scrape design (URL hierarchy, attendee DOM, scheduled-vs-on-demand branch, table contract + dedupe recipe, feeds-ep_dashboards note, Civis go-live checklist)
+- `bq/ptv_training_signups.sql` — DDL for the training-signups landing table (partitioned by `as_of_date`, `CREATE TABLE IF NOT EXISTS` so the sync self-heals a fresh env)
 - `docs/volunteer_sheets_spec.md` — volunteer sheets sync design (row-stability contract, registry seeding, go-live checklist)
 - `bq/shift_volunteer_sync_targets.sql` — DDL + registration contract for the sync-targets registry
 - `bq/airtable_sync_sources.sql` — DDL + registration contract + seeds for the Airtable base registry (insert an enabled row = start capturing a base)
@@ -99,6 +111,9 @@ python sync_shift_volunteers.py --states NE,PA     # exact pull-set override (op
 python sync_shift_volunteers.py --bq-only          # skip the Airtable leg
 python sync_all_volunteers.py                      # all-volunteers sync (all 50 states + DC)
 python sync_all_volunteers.py --states NE,PA       # subset override for ops/testing
+python sync_ptv_trainings.py                       # training signups (GUI scrape, all states → BQ)
+python sync_ptv_trainings.py --states OH,PA        # subset override for ops/testing
+python sync_ptv_trainings.py --list                # scrape+print current state's training list; no switch, no write
 python sync_airtable_bases.py                      # Airtable capture (all enabled registry bases)
 python sync_airtable_bases.py --bases ne_field_report,ut_quiz  # subset (ops/testing)
 python sync_airtable_bases.py --list               # show discovered tables, write nothing
