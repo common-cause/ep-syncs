@@ -1,6 +1,7 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-07-23 (shift sync decoupled to a national pull).
+*Last verified: 2026-07-23 (shift sync decoupled to a national pull;
+Airtable bases capture created + scheduled in Civis same day).
 All-volunteers sync added + scheduled in Civis 2026-07-02.*
 
 Source-of-truth for what's scheduled in Civis from this repo. Jobs are
@@ -290,7 +291,8 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - **Source script:** `civis/sync_airtable_bases.sh`
 - **Runs:** `app/sync_airtable_bases.py`
 - **Type:** Individual (Daily at 6:45 AM ET)
-- **Civis job name:** *not created yet* — suggested "EP Airtable Bases Sync"
+- **Civis job name:** EP Airtable Bases Sync (Civis job id 362699252,
+  created 2026-07-23)
 - **Schedule:** Daily at 6:45 AM ET (Civis Container Script)
 - **APIs:** Airtable (read only — records + metadata; ~5 req/s/base,
   sequential, pyairtable retries 429s), BigQuery (read `ep`, write
@@ -325,7 +327,9 @@ To pause a sync without removing it, set `enabled = FALSE`.
   `JSON_VALUE` extraction on the history JSON column confirmed working;
   same-day rerun idempotency confirmed (ROW_NUMBER dedupe recipe returns
   exactly one row per record).
-- **Not yet in Civis.**
+- **Live in Civis** (2026-07-23): job created, first run succeeded,
+  scheduled daily at 6:45 AM ET. Confirm failure notifications are
+  enabled on the job (standing lesson from the shift job).
 
 #### Civis configuration
 

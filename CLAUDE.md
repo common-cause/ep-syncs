@@ -112,7 +112,7 @@ python run_misc_jobs.py --list                     # list registered misc tasks 
 ```
 All read credentials from `.env` locally; in Civis they run as scheduled
 GitHub-backed container jobs (shift sync daily 6:00 AM ET, all-volunteers
-daily 6:30 AM ET, Airtable capture not yet scheduled — planned 6:45 AM ET,
+daily 6:30 AM ET, Airtable capture daily 6:45 AM ET,
 volunteer sheets not yet scheduled — planned 7:00 AM ET,
 misc jobs nightly 3:00 AM ET, self-selecting tasks per
 `misc_jobs_schedule.yaml`)
