@@ -111,9 +111,10 @@ python sync_ptv_trainings.py --list          # print current state's trainings; 
 Same per-state failure isolation and same-day partition idempotency as the
 other syncs (consumers dedupe on `(as_of_date, registration_id)`). **Local-only,
 not a Civis job** — the browser automation and Outlook magic-code login are
-inherently local; the target is a ~4 AM local scheduled task that self-heals its
-own auth (verifies headless, re-logs-in headed via Outlook only if the session
-died). Design: `docs/ptv_trainings_sync_spec.md`.
+inherently local. Runs as a **Windows Task Scheduler job** ("EP PTV Trainings
+Sync", daily 4 AM ET) via `scripts/run_ptv_trainings.ps1`, which self-heals auth
+(verifies headless, re-logs-in headed via Outlook only if the session died).
+Design: `docs/ptv_trainings_sync_spec.md`.
 
 ### Airtable bases capture
 

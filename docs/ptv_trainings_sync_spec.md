@@ -1,8 +1,9 @@
 # PTV Trainings Sync — Spec
 
 *Drafted 2026-07-24. Status: **built; full 50+DC run validated (2,603 rows /
-19 states / 0 failures / 0 warnings, ~16 min). Not yet scheduled** — target is
-a ~4 AM LOCAL task, not Civis (see §7).*
+19 states / 0 failures / 0 warnings, ~16 min); LIVE as a local Windows Task
+Scheduler job** "EP PTV Trainings Sync", daily 4:00 AM ET, first fire
+2026-07-25 (see §7). Not Civis.*
 *Scope: **PTV admin GUI → BigQuery only.** No Airtable leg.*
 
 A browser-automation sync that captures **training signup records** from the
@@ -177,30 +178,36 @@ replace inferred signup dates with **real timestamps**, count every signup
 (incl. prior cycles), and per-event map PTV trainings to cycle/verdict. Wiring
 that up is an **ep-dashboards** work item, not this sync's.
 
-## 7. Go-live — LOCAL scheduled task (the remaining follow-up)
+## 7. Go-live — LOCAL scheduled task (LIVE 2026-07-24)
 
-**Decided (2026-07-24): this runs LOCALLY, not in Civis.** The browser
-automation and the Outlook magic-code login are inherently local (Windows + a
-running Outlook profile); a headless/remote job fundamentally cannot
-self-authenticate to PTV. Target: a **~4 AM Windows Task Scheduler** job on
-Rob's machine — same pattern as ep-dashboards' local scheduled agent. No Civis
-job, no `civis/*.sh` entrypoint, no cross-machine state shipping.
+**This runs LOCALLY, not in Civis.** The browser automation and the Outlook
+magic-code login are inherently local (Windows + a running Outlook profile); a
+headless/remote job fundamentally cannot self-authenticate to PTV. Registered as
+a Windows Task Scheduler job — same pattern as ep-dashboards' local scheduled
+agent. No Civis job, no `civis/*.sh` entrypoint, no cross-machine state shipping.
 
-- [ ] Wrapper entrypoint (`.ps1`/`.bat`) that runs the ep-syncs venv's Python on
-      `sync_ptv_trainings.py`, logging to a dated file.
-- [ ] Register a Task Scheduler job, daily ~4 AM. Runtime ~16 min for 50+DC —
-      comfortable off-hours. "Run whether logged on or not" is only viable if it
-      still lets the headed Outlook relogin reach a desktop session; otherwise
-      require an interactive logon.
-- [ ] **Auth self-heal is already built in:** `ensure_session(headless=False)`
-      verifies headless (silent when the session is live) and opens a headed
-      Outlook relogin *only if it died*. Nothing to provision.
-- [ ] Env precondition (the real dependency): the machine is **awake, logged in,
-      Outlook running** at 4 AM. Confirm sleep/wake + Outlook autostart.
-- [ ] The first scheduled run empirically settles PTV's server-side session TTL:
-      its log shows either "session valid" (persisted overnight) or an
-      auto-relogin. Either way the run succeeds.
-- [ ] `.env` already carries `PTV_ADMIN_EMAIL` + `BIGQUERY_CREDENTIALS`. No
+- [x] **Wrapper:** `scripts/run_ptv_trainings.ps1` — runs the ep-syncs venv
+      Python on `sync_ptv_trainings.py`, forces UTF-8 I/O, logs a dated file
+      under `logs/` (gitignored), prunes logs >30 days. Pure ASCII (PS 5.1
+      BOM-less trap). Validated end-to-end via the exact scheduler command.
+- [x] **Registered:** task **"EP PTV Trainings Sync"**, `-Daily -At 4:00AM`
+      (ET), `-StartWhenAvailable -WakeToRun`, 1 h `-ExecutionTimeLimit`,
+      principal UserId=RobKerth / LogonType=**Interactive** / RunLevel=Limited
+      (per-user, no admin). First fire **2026-07-25 04:00 ET**, daily after.
+      Runtime ~16 min. To remove: `Unregister-ScheduledTask -TaskName 'EP PTV
+      Trainings Sync'`.
+- [x] **Auth self-heal built in:** `ensure_session(headless=False)` verifies
+      headless (silent when live) and opens a headed Outlook relogin *only if
+      the session died*. Nothing to provision. Interactive logon is required
+      precisely so that relogin can reach a desktop + Outlook.
+- [ ] **Env precondition (the real dependency, Rob to confirm):** the machine is
+      **awake, logged in, Outlook running** at 4 AM. Interactive-token tasks
+      skip if logged out; a locked session is fine. Confirm sleep/wake behavior.
+- [ ] **First-fire watch:** the 2026-07-25 log settles PTV's server-side session
+      TTL — either "session valid" (persisted overnight) or an auto-relogin.
+      Session observed valid ~7.5 h after login (08:18 → 15:46) with no relogin;
+      overnight is the open span.
+- [x] `.env` carries `PTV_ADMIN_EMAIL` + `BIGQUERY_CREDENTIALS`. No
       `PTV_API_KEY` needed (browser, not API).
 
 ## 8. Gotchas / open items
