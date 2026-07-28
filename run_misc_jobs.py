@@ -42,7 +42,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-from misc_jobs import event_975203_signups
+from misc_jobs import asana_ep_kanban, event_975203_signups
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +76,13 @@ JOBS: List[MiscJob] = [
         description="Mobilize event 975203 (FL trainings Jul-Aug 2026) signup "
                     "roster -> Google Sheet for FL program.",
         run=event_975203_signups.run,
+    ),
+    MiscJob(
+        key="asana_ep_kanban",
+        description="Registered Asana EP boards (ep.asana_sync_sources) -> "
+                    "asana_raw_2026 daily snapshots. Feeds ep_2026_cleaned "
+                    "for states deploying outside PTV/Airtable (NM today).",
+        run=asana_ep_kanban.run,
     ),
 ]
 

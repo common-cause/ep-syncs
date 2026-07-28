@@ -85,7 +85,7 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 - `sync_airtable_bases.py` — registered Airtable bases → `ep_2026_raw` (typed per-(base,table) tables rebuilt each run + JSON history), driven by the `ep.airtable_sync_sources` registry; READ-ONLY toward Airtable. Design: `docs/airtable_bases_sync_spec.md`
 - `sync_volunteer_sheets.py` — BQ roster → Google Sheets exports (one sheet per state, one per partner source code) in the "2026 EP Volunteer Exports" shared drive; partner-edit-safe (hidden `_data` tab + formula mirror), driven by the `ep.volunteer_sheet_targets` registry
 - `run_misc_jobs.py` — shared runner for small, periodic exports that don't each warrant their own Civis job; one nightly Civis job (~3 AM ET) runs the tasks scheduled for tonight's ET weekday. Task identity lives in the `JOBS` registry; task timing lives in `misc_jobs_schedule.yaml`. Per-task failures isolated. Add a task = new `misc_jobs/` module with `run()` + a `JOBS` row + a YAML entry
-- `misc_jobs/` — task modules for `run_misc_jobs.py`; today `event_975203_signups.py` (Mobilize event 975203 FL-training signups → Google Sheet)
+- `misc_jobs/` — task modules for `run_misc_jobs.py`: `event_975203_signups.py` (Mobilize event 975203 FL-training signups → Google Sheet) and `asana_ep_kanban.py` (registered Asana EP boards → `asana_raw_2026` daily snapshots; registry `ep.asana_sync_sources`; READ-ONLY toward Asana). **Asana capture is for states that deploy volunteers outside PTV/Airtable entirely** — NM (CCNM) is the 2026 case. Design + the open questions for NM: `docs/asana_nm_sync_spec.md`
 - `misc_jobs_schedule.yaml` — per-task night-of-week schedule for `run_misc_jobs.py` (edit + push to re-time a task; no Civis change)
 - `bq/ep_2026_cleaned/` — committed SQL for the `ep_2026_cleaned` interface layer (views + UDFs other projects consume; normalized email/phone contract). Applied via `apply_bq_views.py` (`--check` = drift check)
 - `apply_bq_views.py` — apply/drift-check the `bq/ep_2026_cleaned/*.sql` DDL in filename (dependency) order; `--render-generated` rewrites the 3x union-view snapshots
@@ -94,6 +94,10 @@ All tools are pre-approved — no confirmation needed. Docs are auto-generated f
 - `docs/airtable_bases_sync_spec.md` — Airtable capture design + the `ep_2026_raw` landing-zone contract the interface layer builds against
 - `docs/all_volunteers_sync_spec.md` — all-volunteers sync design + the deferred Airtable-leg notes
 - `docs/ptv_trainings_sync_spec.md` — PTV trainings GUI-scrape design (URL hierarchy, attendee DOM, scheduled-vs-on-demand branch, table contract + dedupe recipe, feeds-ep_dashboards note, Civis go-live checklist)
+- `docs/asana_nm_sync_spec.md` — NM Asana board recon + capture design; also the **intake contract for absorbing ANY state tool outside our toolset** (§6) and the open question list for the NM program (§7). Read before wiring up another state's own system
+- `docs/asana_connector_spec.md` — the buildout spec that produced `AsanaConnector` in ccef-connections (historical; the connector shipped in v0.3.0)
+- `bq/asana_ep_kanban_tasks.sql`, `bq/asana_projects.sql` — DDL for the Asana landing tables (`CREATE TABLE IF NOT EXISTS`, partitioned by `as_of_date`, so the sync self-heals a fresh env)
+- `bq/asana_sync_sources.sql` — DDL + registration contract + NM seed for the Asana board registry. Carries board **conventions** (stage order, where email/phone live) as data, so a state improving its board is a registry UPDATE rather than a code change
 - `bq/ptv_training_signups.sql` — DDL for the training-signups landing table (partitioned by `as_of_date`, `CREATE TABLE IF NOT EXISTS` so the sync self-heals a fresh env)
 - `docs/volunteer_sheets_spec.md` — volunteer sheets sync design (row-stability contract, registry seeding, go-live checklist)
 - `bq/shift_volunteer_sync_targets.sql` — DDL + registration contract for the sync-targets registry
@@ -123,7 +127,10 @@ python sync_volunteer_sheets.py --targets NE,aclum # subset override for ops/tes
 python run_misc_jobs.py                            # misc jobs scheduled for tonight (ET weekday)
 python run_misc_jobs.py --as-of mon                # dry-run a specific night (still executes tasks)
 python run_misc_jobs.py --only event_975203_signups # single misc task, ignore schedule (ops/testing)
+python run_misc_jobs.py --only asana_ep_kanban      # Asana capture only (ops/testing)
 python run_misc_jobs.py --list                     # list registered misc tasks + schedule, run nothing
+python misc_jobs/asana_ep_kanban.py                # Asana capture standalone (writes)
+python misc_jobs/asana_ep_kanban.py --dry-run      # pull + report distributions, write nothing
 ```
 All read credentials from `.env` locally; in Civis they run as scheduled
 GitHub-backed container jobs (shift sync daily 6:00 AM ET, all-volunteers

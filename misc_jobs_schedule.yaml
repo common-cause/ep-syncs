@@ -20,3 +20,9 @@ jobs:
   event_975203_signups:
     enabled: true
     days: [mon]   # "Sunday night" == the Monday 3 AM ET run
+
+  asana_ep_kanban:
+    enabled: true
+    days: daily   # snapshot grain is daily; skipping a night loses that day's
+                  # stage-transition evidence permanently (Asana exposes only a
+                  # task's CURRENT section -- see docs/asana_nm_sync_spec.md)

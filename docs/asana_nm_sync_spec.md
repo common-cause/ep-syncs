@@ -3,6 +3,10 @@
 *Recon run 2026-07-25 against the live workspace using `AsanaConnector`
 (ccef-connections v0.5.0) and `ASANA_API_KEY_PASSWORD` from `.env`.*
 
+**Status (2026-07-28): Phase 1 is BUILT and validated end-to-end, but not yet
+deployed — it needs one privileged BigQuery step from someone with
+`bigquery.datasets.create`. See §8.**
+
 **Verdict: build it, in two phases. Phase 1 now.**
 
 NM is not a PTV state. PTV is a tool we make available, not a requirement, and
@@ -145,6 +149,16 @@ Consequences, in priority order:
    address, pastes two addresses, or writes "email: x@y.com". Phase 1 carries
    `notes_had_email` and `notes_residual` so drift is visible in data rather
    than discovered months later.
+
+   **This paid off on the first run.** `notes_residual` was non-empty on 12 of
+   42 tasks — and the leftover text was a **phone number** in every case. The
+   partner-imported (`indivisible`) records follow an undocumented
+   `email` + newline + `phone` convention. Phase 1 now parses phone as well
+   (`parsed_phone`, normalized to the `norm_phone` contract), which recovered
+   12 real phone numbers that a naive email-only parse would have discarded
+   silently. `notes_residual` is now empty on all 42 rows, so the board's notes
+   convention is fully accounted for — and any future drift will show up the
+   same way.
 3. **Names arrive as one string.** `volunteers` exposes `first_name` /
    `last_name` separately; the board has only a full-name task title. A
    naive split mishandles multi-word given names, particles, and suffixes
@@ -262,9 +276,85 @@ forward**, which is the argument for starting Phase 1 now. True historical
 signup→trained→shifted timestamps would need the Stories API (new connector
 scope) and shouldn't be promised without confirming it's wanted.
 
-### 5.5 Effort
+### 5.5 As built
 
-~150 lines + DDL + registry seed + two view edits. The connector is done.
+| Artifact | What it is |
+|---|---|
+| `misc_jobs/asana_ep_kanban.py` | The capture task. `run()` for the scheduler; `--dry-run` for ops (pulls, flattens, reports distributions + a PII-masked sample row, writes nothing). Per-board failures isolated so one bad board can't cost the others their snapshot. |
+| `bq/asana_ep_kanban_tasks.sql` | Task landing table, partitioned on `as_of_date`. |
+| `bq/asana_projects.sql` | Board-structure snapshot (sections, custom-field settings, owner, archived). The drift detector: a renamed section or a newly added custom field becomes visible on its own. |
+| `bq/asana_sync_sources.sql` | Registry DDL + registration contract + the NM seed row. **Created and seeded in BQ already** (`ep.asana_sync_sources`). |
+| `bq/ep_2026_cleaned/35_asana_pipeline.sql` | Task-grain board view, current snapshot. Retains NULL-email rows on purpose — this is where you can see who the roster is losing. |
+| `bq/ep_2026_cleaned/40_volunteers.sql` | Third UNION branch, `source_system='asana'`. |
+| `bq/ep_2026_cleaned/50_volunteer_activity.sql` | `asana_board_added` + namespaced `asana_stage_*` events. |
+| `bq/ep_2026_cleaned/90_sync_health.sql` | `source='asana'` freshness rows, `scope = '<STATE>__<project_gid>'`. |
+| `run_misc_jobs.py`, `misc_jobs_schedule.yaml` | Registered as `asana_ep_kanban`, `days: daily`. |
+
+Registry-carried conventions turned out to matter more than expected: both the
+email *and* phone locations are registry columns (`email_field_name` /
+`email_from_notes`, `phone_field_name` / `phone_from_notes`), so the answer to
+Q1 is applied with an `UPDATE`, not a deploy.
+
+### 5.6 Validation performed
+
+The production dataset doesn't exist yet (§8), so Phase 1 was validated by
+standing the whole chain up on temporary tables in a writable dataset
+(`ep._tmp_asana_*`, `ep_2026_cleaned._tmp_*`), loading the **real 42 board rows
+through the sync's own flattening code**, building all four cleaned-layer views
+against them, running the checks below, then dropping everything.
+
+This catches what a syntax check cannot: column-name errors, and in particular
+the **three-branch UNION type match** in `volunteers` — the most likely place
+for a silent break.
+
+Results (2026-07-28, board at 42 tasks):
+
+| Check | Result |
+|---|---|
+| `asana_pipeline` rows / with email | 42 / 34 |
+| `asana_pipeline` grain dupes on `task_gid` | **0** |
+| `volunteers` Asana-branch rows | 28 (34 with email − 6 already in PTV) |
+| `volunteers` grain dupes on `(state, email)` | **0** |
+| Asana rows with a phone | 12 |
+| Asana rows wrongly flagged `in_ptv` | **0** |
+| Asana rows with `shift_count > 0` | **0** — `shift_signups` untouched |
+| **V2 regression:** national `is_active AND in_ptv` vs `v_users_current` | **0 difference** |
+| Emails failing the `norm_email` shape / phones not 10 digits | **0 / 0** |
+| `sync_health` Asana rows | 1 (`scope='NM__1216633527817242'`, staleness 0) |
+| `volunteer_activity` Asana events | 62 |
+
+**The test caught a real bug** that a syntax check could not, and one that
+would have broken `volunteers` for *every* consumer rather than only Asana
+rows: the Airtable-side dedupe guard was written as a correlated
+`NOT EXISTS` against `ep_2026_cleaned.shifted_volunteers`, and BigQuery cannot
+de-correlate a subquery against a large generated UNION view — every query
+touching the view failed with *"Correlated subqueries that reference other
+tables are not supported."* It only looked healthy on `WHERE in_ptv` queries,
+where BigQuery prunes the Asana branch before evaluating it. Both dedupe guards
+on that branch are now anti-joins (`LEFT JOIN … IS NULL`), with the PTV one
+reusing the existing `ever` CTE instead of re-scanning `ptv_raw_2026.users`.
+Recorded as KL `bigquery-correlated-subqueries-fail-against-union-views`.
+
+### The coverage gap, quantified
+
+The event breakdown makes the §4 problem concrete:
+
+```
+asana_board_added:               28
+asana_stage_sign_up:             21
+asana_stage_training_completed:  11
+asana_stage_shifted:              2   <-- 10 cards sit in Shifted
+```
+
+**Only 2 of the 10 volunteers NM has marked `Shifted` produce any event in the
+interface layer**, because 8 of those cards carry no email. NM's most advanced
+volunteers are ~80% invisible downstream. That single number is the strongest
+version of Q1/Q2 to take to the program.
+
+### 5.7 Effort
+
+~250 lines + DDL + registry seed + three view edits. The connector was already
+done.
 
 ## 6. The generalizable part
 
@@ -358,6 +448,66 @@ reliably and keep working without anyone thinking about it.*
     with dates, plus `100/150/200 Volunteers Shifted`) that we could sync as a
     goal-vs-actual table — but only if those are real commitments rather than
     template leftovers.
+
+---
+
+## 8. Go-live: the one step that needs privileged access
+
+**Blocker: neither BigQuery identity available here can create a dataset.**
+
+```
+403 Access Denied: Project proj-tmc-mem-com:
+User does not have bigquery.datasets.create permission
+```
+
+Confirmed for **both** identities — the `com-dbt@` sync service account
+(`BIGQUERY_CREDENTIALS_PASSWORD`) *and* the read-mostly BQ MCP service account.
+This extends the known permission split (KL:
+`bq-mcp-vs-com-dbt-service-account-different-permission-profiles`, which
+covered table-level differences): dataset creation in `proj-tmc-mem-com` is
+restricted to a human/admin account or TMC.
+
+Everything else is done. The remaining steps, in order:
+
+1. **Create the dataset** — someone with project-level BQ rights runs this
+   once, in the BigQuery console or as their own user:
+
+   ```sql
+   CREATE SCHEMA `proj-tmc-mem-com.asana_raw_2026`
+   OPTIONS(
+     location = 'US',
+     description = "Raw daily snapshots of Asana boards used by state EP programs that deploy volunteers outside PTV/Airtable. Written by ep-syncs misc_jobs/asana_ep_kanban.py. Contains PII; access-controlled."
+   );
+   ```
+
+   Grant `com-dbt@` dataEditor on it (matching `ptv_raw_2026`), or the sync's
+   `CREATE TABLE IF NOT EXISTS` step will fail on the next line.
+
+2. **First capture** — `python misc_jobs/asana_ep_kanban.py`. Creates both
+   landing tables and writes the first snapshot. Expect ~42 task rows,
+   ~34 with email.
+
+3. **Apply the cleaned-layer views** — `python apply_bq_views.py`. Must come
+   *after* step 2: `35_asana_pipeline` and the `40_volunteers` Asana branch
+   reference the landing table, and BigQuery resolves table references at view
+   creation. **Until step 2 runs, `apply_bq_views.py` will fail** on
+   `35_asana_pipeline.sql` with "Not found: Dataset … asana_raw_2026" — that's
+   expected, not a regression.
+
+4. **Verify** — re-run the §5.6 checks against the real objects. The one that
+   matters most: the V2 regression (`is_active AND in_ptv` per state still
+   equals `v_users_current`), which proves adding a third branch didn't disturb
+   PTV reporting.
+
+5. **Confirm the schedule** — the task is registered `days: daily` and rides
+   the existing nightly ~3 AM ET Civis job (`EP Misc Sync Jobs`, id
+   361625051). No Civis change needed; the next nightly run picks it up. Note
+   `civis/SCHEDULED_SCRIPTS.md` describes that job generically, so nothing
+   there needs editing either — but check the first nightly log for the
+   per-board coverage line.
+
+6. **Send §7 to the NM program** and, once answered, do Phase 2: registry
+   `UPDATE` for structured contact fields, backfill coverage toward 42/42.
 
 ---
 
