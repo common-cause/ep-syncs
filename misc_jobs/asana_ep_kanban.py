@@ -281,16 +281,40 @@ def _ddl_path(filename: str):
     return Path(__file__).resolve().parent.parent / "bq" / filename
 
 
+def _dataset_exists(bq: BigQueryConnector) -> bool:
+    """Whether the landing dataset exists.
+
+    A plain read query rather than a connector method: ccef_connections'
+    BigQueryConnector exposes table_exists but not dataset_exists, and adding
+    one there would mean a library release + tag bump (Civis installs pin to
+    tags) for a single existence check.
+    """
+    rows = list(bq.query(
+        f"SELECT 1 AS ok FROM `{BQ_PROJECT}.INFORMATION_SCHEMA.SCHEMATA` "
+        f"WHERE schema_name = '{DATASET}'"
+    ))
+    return bool(rows)
+
+
 def ensure_tables(bq: BigQueryConnector) -> None:
-    """Create the dataset and both landing tables if absent, so a fresh
-    container (or a fresh BQ project) self-heals."""
-    bq.query(
-        f"CREATE SCHEMA IF NOT EXISTS `{BQ_PROJECT}.{DATASET}` "
-        "OPTIONS(location='US', description="
-        '"Raw daily snapshots of Asana boards used by state EP programs that '
-        'deploy volunteers outside PTV/Airtable. Written by ep-syncs '
-        'misc_jobs/asana_ep_kanban.py. Contains PII; access-controlled.")'
-    )
+    """Create both landing tables if absent, so a fresh container self-heals.
+
+    The DATASET is deliberately NOT created here. `com-dbt@` has no
+    `bigquery.datasets.create` in proj-tmc-mem-com, and BigQuery checks that
+    permission even for `CREATE SCHEMA IF NOT EXISTS` on a dataset that already
+    exists -- so attempting it 403s forever rather than being a harmless no-op.
+    Dataset creation is a one-time human/admin step (see
+    docs/asana_nm_sync_spec.md); tables self-heal.
+    """
+    if not _dataset_exists(bq):
+        raise RuntimeError(
+            f"BigQuery dataset {BQ_PROJECT}.{DATASET} does not exist. It must "
+            f"be created once by an account with bigquery.datasets.create "
+            f"(neither com-dbt@ nor the BQ MCP service account has it), then "
+            f"granted dataEditor to com-dbt@. SQL is in "
+            f"docs/asana_nm_sync_spec.md section 8."
+        )
+
     created = False
     for filename, table in (
         ("asana_ep_kanban_tasks.sql", TASKS_TABLE),

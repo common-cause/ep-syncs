@@ -3,9 +3,10 @@
 *Recon run 2026-07-25 against the live workspace using `AsanaConnector`
 (ccef-connections v0.5.0) and `ASANA_API_KEY_PASSWORD` from `.env`.*
 
-**Status (2026-07-28): Phase 1 is BUILT and validated end-to-end, but not yet
-deployed — it needs one privileged BigQuery step from someone with
-`bigquery.datasets.create`. See §8.**
+**Status (2026-07-29): Phase 1 is LIVE.** `asana_raw_2026` was created,
+the first capture landed 42 tasks, all 12 cleaned-layer views are applied, and
+the full verification suite passes (§8). NM volunteers now appear in
+`ep_2026_cleaned` for the first time. Phase 2 waits on the §7 answers.
 
 **Verdict: build it, in two phases. Phase 1 now.**
 
@@ -451,63 +452,63 @@ reliably and keep working without anyone thinking about it.*
 
 ---
 
-## 8. Go-live: the one step that needs privileged access
+## 8. Go-live (completed 2026-07-29)
 
-**Blocker: neither BigQuery identity available here can create a dataset.**
+`asana_raw_2026` was created by Rob (dataset creation needs
+`bigquery.datasets.create`, which **neither** the `com-dbt@` sync account nor
+the BQ MCP service account has — see KL
+`bq-mcp-vs-com-dbt-service-account-different-permission-profiles`). Then:
 
-```
-403 Access Denied: Project proj-tmc-mem-com:
-User does not have bigquery.datasets.create permission
-```
+1. **First capture** — `python misc_jobs/asana_ep_kanban.py`. Created both
+   landing tables and wrote the first snapshot: **42 tasks, 34 with email**,
+   1 board-structure row. No warnings — `notes_residual` empty on all 42,
+   `stage_order` resolved on all 42, board still has 0 custom fields.
+2. **Views** — `python apply_bq_views.py`: all 12 files applied, including
+   `35_asana_pipeline` and the rewritten `40_volunteers`.
+3. **Verification** — 13/13 checks PASS, matching the temp-object predictions
+   exactly (§5.6). Notably **V2 held: the national `is_active AND in_ptv`
+   roster still equals `v_users_current` exactly**, so the third branch did not
+   disturb PTV reporting. `apply_bq_views.py --check`: 11 views, 0 drift.
+4. **All three branches materialize** — the query that would have caught
+   yesterday's correlated-subquery bug, now clean:
 
-Confirmed for **both** identities — the `com-dbt@` sync service account
-(`BIGQUERY_CREDENTIALS_PASSWORD`) *and* the read-mostly BQ MCP service account.
-This extends the known permission split (KL:
-`bq-mcp-vs-com-dbt-service-account-different-permission-profiles`, which
-covered table-level differences): dataset creation in `proj-tmc-mem-com` is
-restricted to a human/admin account or TMC.
+   | `source_system` | rows | active | `in_ptv` | with phone |
+   |---|---|---|---|---|
+   | `ptv` | 60,731 | 60,705 | 60,731 | 60,447 |
+   | `asana` | **28** | 28 | 0 | 12 |
+   | `airtable_self_add` | 4 | 4 | 0 | 4 |
 
-Everything else is done. The remaining steps, in order:
+5. **NM in `sync_health` for the first time**, across all three of its streams:
 
-1. **Create the dataset** — someone with project-level BQ rights runs this
-   once, in the BigQuery console or as their own user:
-
-   ```sql
-   CREATE SCHEMA `proj-tmc-mem-com.asana_raw_2026`
-   OPTIONS(
-     location = 'US',
-     description = "Raw daily snapshots of Asana boards used by state EP programs that deploy volunteers outside PTV/Airtable. Written by ep-syncs misc_jobs/asana_ep_kanban.py. Contains PII; access-controlled."
-   );
+   ```
+   asana                 NM__1216633527817242   42     staleness 0
+   ptv_shift_volunteers  NM                     10     staleness 0
+   ptv_users             NM                   1515     staleness 0
    ```
 
-   Grant `com-dbt@` dataEditor on it (matching `ptv_raw_2026`), or the sync's
-   `CREATE TABLE IF NOT EXISTS` step will fail on the next line.
+6. **Schedule** — registered `days: daily` on the existing nightly ~3 AM ET
+   Civis job (`EP Misc Sync Jobs`, id 361625051). No Civis change was needed.
+   `civis/SCHEDULED_SCRIPTS.md` describes that job generically, so it needed no
+   edit either. **Check the first nightly log** for the per-board coverage line
+   and confirm the partition pre-delete succeeded (the streaming-buffer caveat
+   only bites on a same-day rerun, not on the next night's run).
 
-2. **First capture** — `python misc_jobs/asana_ep_kanban.py`. Creates both
-   landing tables and writes the first snapshot. Expect ~42 task rows,
-   ~34 with email.
+### Bug found during go-live
 
-3. **Apply the cleaned-layer views** — `python apply_bq_views.py`. Must come
-   *after* step 2: `35_asana_pipeline` and the `40_volunteers` Asana branch
-   reference the landing table, and BigQuery resolves table references at view
-   creation. **Until step 2 runs, `apply_bq_views.py` will fail** on
-   `35_asana_pipeline.sql` with "Not found: Dataset … asana_raw_2026" — that's
-   expected, not a regression.
+`ensure_tables()` opened with `CREATE SCHEMA IF NOT EXISTS`. That **403s even
+when the dataset already exists** — BigQuery checks
+`bigquery.datasets.create` before evaluating `IF NOT EXISTS`, so it is not the
+harmless no-op it looks like. The sync would have failed on every run in the
+only configuration it can actually be deployed in. Now it checks
+`INFORMATION_SCHEMA.SCHEMATA` and raises an actionable error naming the
+required grant. Tables still self-heal via `CREATE TABLE IF NOT EXISTS`.
 
-4. **Verify** — re-run the §5.6 checks against the real objects. The one that
-   matters most: the V2 regression (`is_active AND in_ptv` per state still
-   equals `v_users_current`), which proves adding a third branch didn't disturb
-   PTV reporting.
+### Remaining
 
-5. **Confirm the schedule** — the task is registered `days: daily` and rides
-   the existing nightly ~3 AM ET Civis job (`EP Misc Sync Jobs`, id
-   361625051). No Civis change needed; the next nightly run picks it up. Note
-   `civis/SCHEDULED_SCRIPTS.md` describes that job generically, so nothing
-   there needs editing either — but check the first nightly log for the
-   per-board coverage line.
-
-6. **Send §7 to the NM program** and, once answered, do Phase 2: registry
-   `UPDATE` for structured contact fields, backfill coverage toward 42/42.
+Send §7 to the NM program. Once answered, Phase 2 is a registry `UPDATE` (set
+`email_field_name` / `phone_field_name`, flip the `*_from_notes` flags once
+backfilled) — no code change — plus whatever coverage backfill they can do
+toward 42/42.
 
 ---
 
