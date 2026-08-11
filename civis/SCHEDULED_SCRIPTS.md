@@ -1,8 +1,9 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-07-23 (shift sync decoupled to a national pull;
-Airtable bases capture created + scheduled in Civis same day).
-All-volunteers sync added + scheduled in Civis 2026-07-02.*
+*Last verified: 2026-08-11 (volunteer sheets sync created + scheduled in
+Civis). Shift sync decoupled to a national pull + Airtable bases capture
+created + scheduled 2026-07-23. All-volunteers sync added + scheduled in
+Civis 2026-07-02.*
 
 Source-of-truth for what's scheduled in Civis from this repo. Jobs are
 **GitHub-backed**: the Civis job attaches this repo (branch `main`),
@@ -218,7 +219,8 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - **Runs:** `app/sync_volunteer_sheets.py`
 - **Type:** Individual (Daily at 7:00 AM ET — after the all-volunteers sync
   lands at 6:30)
-- **Civis job name:** *not created yet* — suggested "EP Volunteer Sheets Sync"
+- **Civis job name:** EP Volunteer Sheets Sync (Civis job id 365009753,
+  created 2026-08-11)
 - **Schedule:** Daily at 7:00 AM ET (Civis Container Script)
 - **APIs:** BigQuery (read only), Google Sheets + Drive (write; 60
   requests/min/user quota — per-call 429s are retried with backoff)
@@ -232,15 +234,17 @@ To pause a sync without removing it, set `enabled = FALSE`.
   `docs/volunteer_sheets_spec.md`; registry contract:
   `bq/volunteer_sheet_targets.sql`.
 
-#### Status (2026-07-08)
+#### Status (2026-08-11)
 
-- BQ registry created and seeded (51 state targets enabled; 83 partner-code
-  targets seeded from `ep_archive.source_codes external='Y'` — **needs a
-  curation pass before the job is scheduled**, see the spec).
+- BQ registry created and seeded 2026-07-08; partner-code curation pass
+  landed 2026-07-09 (registry now 51 state + 99 source-code targets, all
+  enabled).
 - Script + entrypoint in the repo; verified end-to-end via local runs:
   all 51 state sheets + the ACLUM partner prototype created and populated;
   rerun idempotency and partner-edit preservation tested.
-- **Not yet in Civis.**
+- **Live in Civis** (2026-08-11): scheduled daily at 7:00 AM ET. Confirm
+  failure notifications are enabled on the job (standing lesson — the shift
+  job silently exited 1 for ~3 weeks before notifications were added).
 
 #### Civis configuration
 

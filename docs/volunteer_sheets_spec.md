@@ -1,9 +1,9 @@
 # Volunteer Sheets Sync — Spec
 
-*Drafted 2026-07-08. Status: **built and verified locally** (2026-07-08) —
-all 51 state sheets + ACLUM partner prototype live in Drive. **Not yet
-scheduled in Civis**; partner-code registry needs a curation pass first
-(§8).*
+*Drafted 2026-07-08. Status: **LIVE in Civis** (2026-08-11) — "EP Volunteer
+Sheets Sync", daily 7:00 AM ET. Built and verified locally 2026-07-08 (all
+51 state sheets + ACLUM partner prototype live in Drive); partner-code
+curation pass (§8) landed 2026-07-09.*
 
 Coalition/state-facing Google Sheets built from PTV volunteer data: one set of
 spreadsheets **by state**, one set **by partner source code**, living in the
