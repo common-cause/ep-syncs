@@ -419,9 +419,20 @@ To pause a sync without removing it, set `enabled = FALSE`.
 | Key | Scheduled (see YAML) | What it does |
 |---|---|---|
 | `event_975203_signups` | `mon` (i.e. "Sun night") | Rebuilds a Google Sheet (in the FL Trainings shared-drive folder) with the full signup roster for Mobilize event 975203 (FL training series, sessions Jul 22 – Aug 16 2026), for FL program. Read-from-BQ, three job-owned tabs (Read me / Signups / By session); shares the file with Amy (`akeith@`). **Time-boxed** — retire the `JOBS` row + YAML entry after the series ends 2026-08-16. |
+| `asana_ep_kanban` | `daily` | Snapshots every enabled board in `ep.asana_sync_sources` (today: the NM `EP Volunteer Onboarding Kanban`) into `asana_raw_2026.ep_kanban_tasks` + `asana_raw_2026.projects`, partitioned by `as_of_date`. READ-ONLY toward Asana. Daily grain is load-bearing: Asana exposes only a task's CURRENT section, so a skipped night permanently loses that day's stage-transition evidence — do not park this task casually. Feeds `ep_2026_cleaned.asana_pipeline` + the `source_system='asana'` branch of `volunteers`. Design: `docs/asana_nm_sync_spec.md`. |
 
-#### Status (2026-07-14)
+#### Status (2026-08-18)
 
+- **Incident 2026-07-30 → 08-17:** every nightly run failed at import
+  (`ImportError: cannot import name 'AsanaConnector'`) because the
+  `asana_ep_kanban` task was registered 2026-07-29 without bumping the
+  entrypoint's ccef-connections pin (v0.2.0 predates `AsanaConnector`, which
+  shipped in v0.3.0). Fixed 2026-08-18: pin bumped to v0.7.1 and the
+  `ASANA_API_KEY` credential added to the attach list above. Cost: the
+  2026-07-30..08-17 Asana daily snapshots are permanently unrecoverable
+  (Asana exposes only current section state), and the FL signups sheet missed
+  its Aug 3 / 10 / 17 refreshes (recoverable — rebuilt from BQ on the next
+  run).
 - Runner (nightly + YAML day-matcher), `misc_jobs/` package, schedule file, and
   entrypoint in the repo (pushed to `main` 2026-07-14).
 - Verified end-to-end via local run: `event_975203_signups` refreshed its
@@ -459,7 +470,17 @@ To pause a sync without removing it, set `enabled = FALSE`.
   service-account JSON in the password field (same credential the volunteer
   sheets job uses). The SA must be able to write to every Drive folder a task
   targets; access to the current FL folder is confirmed.
+- `ASANA_API_KEY` — Asana PAT in the password field (exposes
+  `ASANA_API_KEY_PASSWORD`, which `asana_ep_kanban` reads). Currently Rob's
+  personal PAT (sees the whole `commoncause.org` workspace); a dedicated PAT is
+  an open question in `docs/asana_nm_sync_spec.md` §7.
 - *No PTV or Airtable credential needed for the current task set.*
+
+**Registering a new task means re-checking this list.** A task's credential has
+to be attached to the Civis job AND the entrypoint's ccef-connections pin has to
+include the connector it imports — "no Civis change needed" is only true when
+both already hold. (The Asana task was registered 2026-07-29 without either;
+every nightly run failed at import until 2026-08-18.)
 
 #### Scheduling notes
 

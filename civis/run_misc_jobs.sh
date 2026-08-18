@@ -13,8 +13,11 @@
 # YAML and pushing -- no Civis-side change.
 #
 # Pinned to a ccef-connections release tag -- bump deliberately when upgrading.
-# pyyaml (schedule file) and tzdata (America/New_York weekday) are pinned
-# explicitly so the container always has them regardless of base image.
-pip install "ccef-connections[bigquery,sheets] @ git+https://github.com/common-cause/ccef_connections.git@v0.2.0"
+# The pin must cover every connector any registered task imports (asana_ep_kanban
+# needs AsanaConnector, base install since v0.3.0 -- the v0.2.0 pin broke every
+# nightly run 2026-07-30..08-17). pyyaml (schedule file) and tzdata
+# (America/New_York weekday) are pinned explicitly so the container always has
+# them regardless of base image.
+pip install "ccef-connections[bigquery,sheets] @ git+https://github.com/common-cause/ccef_connections.git@v0.7.1"
 pip install pyyaml tzdata
 python app/run_misc_jobs.py
