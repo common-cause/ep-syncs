@@ -17,10 +17,6 @@
 # runner logs a warning so it doesn't go unnoticed.
 
 jobs:
-  event_975203_signups:
-    enabled: true
-    days: [mon]   # "Sunday night" == the Monday 3 AM ET run
-
   asana_ep_kanban:
     enabled: true
     days: daily   # snapshot grain is daily; skipping a night loses that day's

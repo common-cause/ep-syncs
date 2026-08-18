@@ -42,7 +42,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-from misc_jobs import asana_ep_kanban, event_975203_signups
+from misc_jobs import asana_ep_kanban
 
 logger = logging.getLogger(__name__)
 
@@ -69,14 +69,9 @@ class MiscJob:
 
 # The registry. Add a row to make a task runnable, then give it a schedule in
 # misc_jobs_schedule.yaml. Remove/retire the row when a time-boxed export is
-# done (e.g. after the FL training series ends 2026-08-16).
+# done (as event_975203_signups was on 2026-08-18, after the FL training
+# series ended -- its module stays in misc_jobs/ as a reference).
 JOBS: List[MiscJob] = [
-    MiscJob(
-        key="event_975203_signups",
-        description="Mobilize event 975203 (FL trainings Jul-Aug 2026) signup "
-                    "roster -> Google Sheet for FL program.",
-        run=event_975203_signups.run,
-    ),
     MiscJob(
         key="asana_ep_kanban",
         description="Registered Asana EP boards (ep.asana_sync_sources) -> "

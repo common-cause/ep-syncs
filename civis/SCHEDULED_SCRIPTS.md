@@ -418,8 +418,14 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 | Key | Scheduled (see YAML) | What it does |
 |---|---|---|
-| `event_975203_signups` | `mon` (i.e. "Sun night") | Rebuilds a Google Sheet (in the FL Trainings shared-drive folder) with the full signup roster for Mobilize event 975203 (FL training series, sessions Jul 22 – Aug 16 2026), for FL program. Read-from-BQ, three job-owned tabs (Read me / Signups / By session); shares the file with Amy (`akeith@`). **Time-boxed** — retire the `JOBS` row + YAML entry after the series ends 2026-08-16. |
 | `asana_ep_kanban` | `daily` | Snapshots every enabled board in `ep.asana_sync_sources` (today: the NM `EP Volunteer Onboarding Kanban`) into `asana_raw_2026.ep_kanban_tasks` + `asana_raw_2026.projects`, partitioned by `as_of_date`. READ-ONLY toward Asana. Daily grain is load-bearing: Asana exposes only a task's CURRENT section, so a skipped night permanently loses that day's stage-transition evidence — do not park this task casually. Feeds `ep_2026_cleaned.asana_pipeline` + the `source_system='asana'` branch of `volunteers`. Design: `docs/asana_nm_sync_spec.md`. |
+
+**Retired tasks:** `event_975203_signups` (Mobilize event 975203 FL-training
+signup roster → Google Sheet for FL program, ran `mon` Jul 14 – Aug 18 2026;
+retired 2026-08-18 after the series ended 2026-08-16 with the final roster
+written — 1,288 signups / 894 people. Module kept in `misc_jobs/` as the
+reference example of a task module; only the `JOBS` row + YAML entry were
+removed, per the retire contract).
 
 #### Status (2026-08-18)
 
