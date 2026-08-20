@@ -1,9 +1,10 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-08-11 (volunteer sheets sync created + scheduled in
-Civis). Shift sync decoupled to a national pull + Airtable bases capture
-created + scheduled 2026-07-23. All-volunteers sync added + scheduled in
-Civis 2026-07-02.*
+*Last verified: 2026-08-19 (`infrastructure_sheet` task registered on the misc
+jobs runner; that job's `APIs:` line corrected). Volunteer sheets sync created +
+scheduled in Civis 2026-08-11. Shift sync decoupled to a national pull +
+Airtable bases capture created + scheduled 2026-07-23. All-volunteers sync added
++ scheduled in Civis 2026-07-02.*
 
 Source-of-truth for what's scheduled in Civis from this repo. Jobs are
 **GitHub-backed**: the Civis job attaches this repo (branch `main`),
@@ -434,7 +435,13 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - **Type:** Individual (Nightly, ~3:00 AM ET)
 - **Civis job name:** "EP Misc Sync Jobs" (Civis job id 361625051)
 - **Schedule:** Nightly at 3:00 AM ET (Civis Container Script)
-- **APIs:** BigQuery (read only), Google Sheets + Drive (write)
+- **APIs:** BigQuery (**read/write** — `asana_raw_2026`, `ep_2026_raw`),
+  Asana (read only), Google Sheets (**read only**). No Drive writes.
+  *(Corrected 2026-08-19: this line read "BigQuery (read only), Google Sheets +
+  Drive (write)", which described the retired FL-signups task, not this runner.
+  Both halves had inverted since. This file is machine-parsed by the
+  meta-project's cross-project schedule rollup, whose API-conflict detection
+  depends on it — re-check this line whenever the task set changes.)*
 - **Description:** Shared runner for small, periodic exports that don't each
   warrant their own Civis job. **One nightly job**; on each run the runner
   reads `misc_jobs_schedule.yaml` and executes only the tasks scheduled for
@@ -456,6 +463,7 @@ To pause a sync without removing it, set `enabled = FALSE`.
 | Key | Scheduled (see YAML) | What it does |
 |---|---|---|
 | `asana_ep_kanban` | `daily` | Snapshots every enabled board in `ep.asana_sync_sources` (today: the NM `EP Volunteer Onboarding Kanban`) into `asana_raw_2026.ep_kanban_tasks` + `asana_raw_2026.projects`, partitioned by `as_of_date`. READ-ONLY toward Asana. Daily grain is load-bearing: Asana exposes only a task's CURRENT section, so a skipped night permanently loses that day's stage-transition evidence — do not park this task casually. Feeds `ep_2026_cleaned.asana_pipeline` + the `source_system='asana'` branch of `volunteers`. Design: `docs/asana_nm_sync_spec.md`. |
+| `infrastructure_sheet` | `daily` | Melts the two Infrastructure tabs of the 50-State EP Coalition Plan spreadsheet (`Infrastructure (General)` / `(Primary)`) into `ep_2026_raw.coalition_plan_infrastructure` — one row per (state, sheet column), cell text verbatim, ~1,632 rows/night, partitioned by `as_of_date` (stamped in **ET**, matching the runner's weekday convention). READ-ONLY toward the spreadsheet: program staff own it. Same-day reruns replace the day's partition via a load job (no streaming buffer, so a Civis retry is always clean). Parsed by `ep_2026_cleaned.coalition_plan_infrastructure`; consumed by ep-dashboards' infrastructure marts + Hex pages. Fails loudly on a missing/renamed tab or a row-3 layout change, and logs the header row every run so a column rename is visible the morning it happens. Design: `docs/coalition_plan_infrastructure_sync_spec.md`. |
 
 **Retired tasks:** `event_975203_signups` (Mobilize event 975203 FL-training
 signup roster → Google Sheet for FL program, ran `mon` Jul 14 – Aug 18 2026;
@@ -464,8 +472,18 @@ written — 1,288 signups / 894 people. Module kept in `misc_jobs/` as the
 reference example of a task module; only the `JOBS` row + YAML entry were
 removed, per the retire contract).
 
-#### Status (2026-08-18)
+#### Status (2026-08-19)
 
+- **`infrastructure_sheet` registered 2026-08-19** (assignment from
+  ep-dashboards, which had been running the same melt from a laptop Task
+  Scheduler job into `ep_dashboards.infrastructure_raw`). Verified locally
+  before commit: 1,632 rows landed, same-day rerun replaced them cleanly, and
+  the cleaned view is row-for-row identical to the ep-dashboards dbt model it
+  replaces. **Needs no new credential and no pin bump** — but the entrypoint's
+  extras gained `pandas` (it is *not* part of the `bigquery` extra, and this
+  task loads via `load_dataframe`). Awaiting its first green Civis run;
+  ep-dashboards keeps its local step until then (different destination table, so
+  the two cannot collide).
 - **Incident 2026-07-30 → 08-17:** every nightly run failed at import
   (`ImportError: cannot import name 'AsanaConnector'`) because the
   `asana_ep_kanban` task was registered 2026-07-29 without bumping the
@@ -507,23 +525,31 @@ removed, per the retire contract).
 #### Credentials to attach
 
 - `BIGQUERY_CREDENTIALS` — service account JSON in password field (reuse Civis
-  credential ID 38653). Needs read on the datasets any registered task reads
-  (today: `mobilize_cleaned`).
+  credential ID 38653). Needs read/write on the datasets registered tasks land
+  in (today: `asana_raw_2026`, `ep_2026_raw`) and read on `ep` (registries).
 - `GOOGLE_SHEETS_CREDENTIALS` — the `sheets-controllers@sheets-controllers`
   service-account JSON in the password field (same credential the volunteer
-  sheets job uses). The SA must be able to write to every Drive folder a task
-  targets; access to the current FL folder is confirmed.
+  sheets job uses). The SA must be able to reach every spreadsheet or Drive
+  folder a task targets. Currently read-only use: `infrastructure_sheet` reads
+  the 50-State EP Coalition Plan workbook (access confirmed 2026-08-19 by a
+  local run under this same SA).
 - `ASANA_API_KEY` — Asana PAT in the password field (exposes
   `ASANA_API_KEY_PASSWORD`, which `asana_ep_kanban` reads). Currently Rob's
   personal PAT (sees the whole `commoncause.org` workspace); a dedicated PAT is
   an open question in `docs/asana_nm_sync_spec.md` §7.
 - *No PTV or Airtable credential needed for the current task set.*
 
-**Registering a new task means re-checking this list.** A task's credential has
-to be attached to the Civis job AND the entrypoint's ccef-connections pin has to
-include the connector it imports — "no Civis change needed" is only true when
-both already hold. (The Asana task was registered 2026-07-29 without either;
-every nightly run failed at import until 2026-08-18.)
+**Registering a new task means re-checking this list**, plus the entrypoint's
+`pip install` extras. A task's credential has to be attached to the Civis job,
+the entrypoint's ccef-connections pin has to include the connector it imports,
+**and the extras have to cover its Python dependencies** — "no Civis change
+needed" is only true when all three already hold. (The Asana task was registered
+2026-07-29 without the first two; every nightly run failed at import until
+2026-08-18. `infrastructure_sheet` needed the third: `pandas` is its own extra,
+not part of `bigquery`.) Import-time dependencies are the dangerous kind — the
+runner imports every task module at startup, so one missing package takes down
+every task, not just its own. New tasks should import optional heavy deps inside
+their functions.
 
 #### Scheduling notes
 
@@ -556,7 +582,11 @@ every nightly run failed at import until 2026-08-18.)
 
 #### Target-sheet edits (filters / sorts)
 
-Each task **fully owns** its sheet's job-managed tabs: every run clears and
+*No currently registered task writes to a Google Sheet* — `infrastructure_sheet`
+only reads one, and the sheet-writing FL task retired 2026-08-18. This section
+is the contract for the next task that does write one.
+
+Each such task **fully owns** its sheet's job-managed tabs: every run clears and
 rewrites them wholesale from BigQuery. The job never reads the sheet back, so
 a user filtering or sorting the data view cannot misalign or corrupt anything
 (unlike the volunteer sheets job, which preserves partner columns and so

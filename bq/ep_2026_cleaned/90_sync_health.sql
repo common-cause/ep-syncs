@@ -1,19 +1,20 @@
 -- ep_2026_cleaned.sync_health — per-stream freshness for the interface layer.
 --
 -- One row per source stream: PTV users / PTV shift signups per state, one per
--- registered Asana board, and one per captured Airtable (base, table) that has
--- ever had records. Consumers should check staleness_days <= 1 before trusting
--- data.
+-- registered Asana board, one per Coalition Plan Infrastructure phase, and one
+-- per captured Airtable (base, table) that has ever had records. Consumers
+-- should check staleness_days <= 1 before trusting data.
 --
 -- latest_sync (TIMESTAMP) is NULL for PTV and Asana streams — those raw tables
--- only carry as_of_date. Airtable streams populate it from synced_at.
+-- only carry as_of_date. Airtable and coalition_plan streams populate it from
+-- synced_at.
 -- Airtable tables that have never had a record don't appear (the history
 -- table only receives rows for records; their typed tables still exist).
 -- Likewise an Asana board registered but never captured is absent here rather
 -- than showing as stale — cross-check ep.asana_sync_sources.
 
 CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.sync_health`
-OPTIONS(description="Freshness per source stream feeding ep_2026_cleaned. source: 'ptv_users' | 'ptv_shift_volunteers' | 'asana' | 'airtable'. scope: state code (PTV), STATE__project_gid (Asana), or base_key__table_key (Airtable). row_count = deduped rows in the scope's latest snapshot. Check staleness_days <= 1 before trusting data. Airtable tables with no records ever, and Asana boards registered but never captured, don't appear — cross-check the registries.")
+OPTIONS(description="Freshness per source stream feeding ep_2026_cleaned. source: 'ptv_users' | 'ptv_shift_volunteers' | 'asana' | 'coalition_plan' | 'airtable'. scope: state code (PTV), STATE__project_gid (Asana), phase (coalition_plan), or base_key__table_key (Airtable). row_count = deduped rows in the scope's latest snapshot. Check staleness_days <= 1 before trusting data. Airtable tables with no records ever, and Asana boards registered but never captured, don't appear — cross-check the registries.")
 AS
 WITH users_by_day AS (
   SELECT state, as_of_date, COUNT(*) AS c
@@ -50,6 +51,21 @@ asana_latest AS (
     ARRAY_AGG(STRUCT(as_of_date, c) ORDER BY as_of_date DESC LIMIT 1)[OFFSET(0)] AS last
   FROM asana_by_day
   GROUP BY scope
+),
+-- Coalition Plan Infrastructure tabs: one stream per phase (= per source tab),
+-- because the melt lands both in one nightly write and either could be the one
+-- that went missing.
+coalition_by_day AS (
+  SELECT phase, as_of_date, COUNT(*) AS c, MAX(synced_at) AS max_synced
+  FROM `proj-tmc-mem-com.ep_2026_raw.coalition_plan_infrastructure`
+  GROUP BY phase, as_of_date
+),
+coalition_latest AS (
+  SELECT
+    phase AS scope,
+    ARRAY_AGG(STRUCT(as_of_date, c, max_synced) ORDER BY as_of_date DESC LIMIT 1)[OFFSET(0)] AS last
+  FROM coalition_by_day
+  GROUP BY scope
 )
 SELECT
   'ptv_users'                                        AS source,
@@ -80,6 +96,16 @@ SELECT
   last.c                                             AS row_count,
   DATE_DIFF(CURRENT_DATE(), last.as_of_date, DAY)    AS staleness_days
 FROM asana_latest
+UNION ALL
+-- One row per Infrastructure tab (scope = 'general' | 'primary').
+SELECT
+  'coalition_plan'                                   AS source,
+  scope,
+  last.max_synced                                    AS latest_sync,
+  last.as_of_date                                    AS latest_as_of,
+  last.c                                             AS row_count,
+  DATE_DIFF(CURRENT_DATE(), last.as_of_date, DAY)    AS staleness_days
+FROM coalition_latest
 UNION ALL
 SELECT
   'airtable'                                         AS source,

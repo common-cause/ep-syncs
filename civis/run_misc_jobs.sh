@@ -18,6 +18,11 @@
 # nightly run 2026-07-30..08-17). pyyaml (schedule file) and tzdata
 # (America/New_York weekday) are pinned explicitly so the container always has
 # them regardless of base image.
-pip install "ccef-connections[bigquery,sheets] @ git+https://github.com/common-cause/ccef_connections.git@v0.7.1"
+#
+# Extras: bigquery + sheets (SheetsConnector) + pandas (infrastructure_sheet
+# loads via BigQueryConnector.load_dataframe, and pandas is its OWN extra -- the
+# bigquery extra does not pull it). The base image ships pandas, but naming it
+# here means the job doesn't depend on that staying true.
+pip install "ccef-connections[bigquery,sheets,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.7.1"
 pip install pyyaml tzdata
 python app/run_misc_jobs.py

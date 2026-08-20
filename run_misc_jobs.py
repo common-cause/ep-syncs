@@ -42,7 +42,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-from misc_jobs import asana_ep_kanban
+from misc_jobs import asana_ep_kanban, infrastructure_sheet
 
 logger = logging.getLogger(__name__)
 
@@ -78,6 +78,14 @@ JOBS: List[MiscJob] = [
                     "asana_raw_2026 daily snapshots. Feeds ep_2026_cleaned "
                     "for states deploying outside PTV/Airtable (NM today).",
         run=asana_ep_kanban.run,
+    ),
+    MiscJob(
+        key="infrastructure_sheet",
+        description="50-State EP Coalition Plan Infrastructure tabs (General + "
+                    "Primary) -> ep_2026_raw.coalition_plan_infrastructure, "
+                    "melted to one row per (state, sheet column). Parsed by "
+                    "ep_2026_cleaned.coalition_plan_infrastructure.",
+        run=infrastructure_sheet.run,
     ),
 ]
 

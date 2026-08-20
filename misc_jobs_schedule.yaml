@@ -22,3 +22,10 @@ jobs:
     days: daily   # snapshot grain is daily; skipping a night loses that day's
                   # stage-transition evidence permanently (Asana exposes only a
                   # task's CURRENT section -- see docs/asana_nm_sync_spec.md)
+
+  infrastructure_sheet:
+    enabled: true
+    days: daily   # a hand-edited tracker: program staff change cells any day of
+                  # the week, and the snapshot is how we know WHEN a state's
+                  # setup landed. Two Sheets reads and ~1,600 rows a night, so
+                  # daily costs nothing.
