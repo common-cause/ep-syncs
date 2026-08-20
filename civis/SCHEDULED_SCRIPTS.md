@@ -82,24 +82,61 @@ this doc when a job is created, renamed, rescheduled, or retired.
 - **Destination duplicate keys are skipped, not fatal.** When the
   destination Airtable table already has >1 record with the same
   email (a known consequence of the dual write paths: PTV sync +
-  emergency self-add form), the sync logs a warning naming the
-  affected emails and upserts the rest of the batch normally.
-  Sync still exits 0 on success.
+  emergency self-add form, plus hand-loads via
+  ep-airtable-utilities' `load_volunteers.py`), the sync logs a
+  warning naming the affected emails and upserts the rest of the
+  batch normally. Sync still exits 0 on success.
+- **Every run appends to `proj-tmc-mem-com.ep.shift_sync_log`**
+  (one row per stage/scope — see `bq/shift_sync_log.sql`). This
+  exists because the skip above and a state that stops reporting
+  both end in `exit 0`, so neither was visible in Civis. The
+  closing log line now also names any target with skipped
+  volunteers. **Monitoring query — who is silently stale:**
+  ```sql
+  SELECT as_of_date, scope, skipped_dupe_exact, case_variants,
+         JSON_VALUE_ARRAY(skipped_keys, '$.skipped_dupe_exact') AS keys
+  FROM `proj-tmc-mem-com.ep.shift_sync_log`
+  WHERE stage = 'airtable_upsert'
+    AND as_of_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)
+    AND (skipped_dupe_exact > 0 OR case_variants > 0)
+  ORDER BY as_of_date DESC, scope;
+  ```
+  Swap the predicate for `status = 'regressed'` and
+  `stage = 'ptv_pull'` to find states that stopped returning data.
+- **Email case:** Airtable's `performUpsert` matches
+  `fieldsToMergeOn` **case-sensitively** — verified 2026-08-19
+  against a live base (with `zz.casetest@…` and `ZZ.CaseTest@…` both
+  present, an upsert keyed on the lowercase spelling patched only
+  the exact-case record). The duplicate guard used to count
+  case-insensitively, making it stricter than the operation it
+  guards and freezing any volunteer with a case-variant twin. It now
+  gates the skip on exact spelling and reports case variants
+  separately as `case_variants` (upserted normally, but two records
+  for one human). Audited all 8 enabled targets 2026-08-19: 572
+  records, 19 non-lowercase, **zero** case-variant pairs.
 
 #### Open follow-ups
 
-- **Auto-resolve destination duplicates.** Today the sync skips
-  records whose email already matches >1 record in Airtable, leaving
-  the cleanup to humans. Worth considering: a step that detects these
-  cases and either merges (keep the older `Unique ID Column`, copy
-  any not-yet-on-the-keeper fields off the dupe, then delete the
-  dupe) or surfaces them to a "duplicates to resolve" list (BQ table
-  or Slack ping). The dupe pattern is structural — it'll keep
-  happening as more states come online and more volunteers self-add
-  before showing up in PTV — so doing this systematically beats
-  manual cleanup over time. Punt for now; revisit if dupe volume
-  grows or if a coalition partner has stricter cleanliness needs
-  than NE.
+- **Resolve destination duplicates (15 groups as of 2026-08-19:
+  MI 9, NE 3, PA 3).** 13 of the affected volunteers are still in
+  the incoming sync set, so they are skipped on every run.
+  **Do not script a delete-and-keep merge.** 14 of the 15 groups
+  differ on `Field Reports` and/or `Checklist Submissions` — both
+  records carry *different* linked submissions from real EP work, so
+  deleting either side orphans field reports. Merging means unioning
+  the link arrays into the survivor, which is native in the Airtable
+  UI and belongs to whoever owns those reports. Route the list from
+  the query above to the MI/NE/PA leads. Low urgency: none of the 13
+  have upcoming shifts. The pattern is structural and will recur as
+  more states come online.
+- **`Unique ID Column` is never read or written.** No PTV user id is
+  in the payload at all (`DEFAULT_FIELD_MAP` carries only
+  email/first/last/phone/county/state, and the source view exposes
+  no id), which is why Email carries the entire identity burden.
+  Populating it would give the upsert a stable non-email key. Note
+  the current behaviour is partly a *feature*: a hand-created row is
+  indistinguishable from a sync-created one, so it gets adopted and
+  patched rather than duplicated.
 
 #### Adding new sync targets
 

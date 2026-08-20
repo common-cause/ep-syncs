@@ -19,6 +19,17 @@ Per-state and per-sync failures are isolated. Exit code is non-zero if any
 attempted state failed to land in BigQuery or any Airtable target failed
 to upsert.
 
+TELEMETRY: every run appends one row per (stage, scope) to
+proj-tmc-mem-com.ep.shift_sync_log -- see bq/shift_sync_log.sql. Two outcomes
+here are deliberately NOT failures but must stay visible, because both used to
+end in `exit 0` with nothing but an unread log line:
+
+  * a volunteer skipped because their email already matches >1 destination
+    record (would 422 the batch) -- they silently stop being updated;
+  * a state that pulled zero rows after previously having some ('regressed'),
+    which is indistinguishable in isolation from the ~43 states that
+    legitimately return none every run.
+
 Usage:
     python sync_shift_volunteers.py                 # all states + all targets
     python sync_shift_volunteers.py --states NE,PA  # exact pull-set override
@@ -30,9 +41,11 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import os
 import sys
+import time
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 
@@ -51,6 +64,7 @@ PROJECT = "proj-tmc-mem-com"
 RAW_TABLE = f"{PROJECT}.ptv_raw_2026.shift_volunteers"
 CURRENT_VIEW = f"{PROJECT}.ptv_raw_2026.v_shift_volunteers_current"
 SYNC_TARGETS_TABLE = f"{PROJECT}.ep.shift_volunteer_sync_targets"
+SYNC_LOG_TABLE = f"{PROJECT}.ep.shift_sync_log"
 
 # All 50 states + DC -- mirrors PULL_STATES in sync_all_volunteers.py (keep
 # in lockstep). shift_volunteers_csv returns [] for states with no data, so
@@ -111,6 +125,16 @@ class Config:
     @property
     def unique_states(self) -> List[str]:
         return sorted({s.state for s in self.syncs})
+
+
+@dataclass
+class UpsertStats:
+    """Outcome of one target's Airtable leg, for the run log."""
+    rows_in: int = 0
+    rows_written: int = 0
+    skipped_blank: int = 0
+    skipped_dupe_exact: List[str] = field(default_factory=list)
+    case_variants: List[str] = field(default_factory=list)
 
 
 def _merge_field_map(
@@ -225,18 +249,67 @@ def _chunks(seq: List[Dict[str, Any]], n: int) -> Iterable[List[Dict[str, Any]]]
         yield seq[i:i + n]
 
 
+def prior_state_counts(bq: BigQueryConnector, as_of_date) -> Dict[str, int]:
+    """
+    Per-state row counts from the PREVIOUS SNAPSHOT -- the most recent
+    as_of_date before this one that landed any rows at all.
+
+    Used to tell a state that stopped reporting from one that never did.
+    shift_volunteers_csv returns [] for states with no program, so ~43 of the
+    51 pulled states land zero rows every run and a blanket zero-row warning
+    would be pure noise. A state that had rows in the previous snapshot and
+    has none now is the signal worth raising.
+
+    Two things this deliberately does NOT do:
+
+    * It does not use each state's own most recent NON-EMPTY snapshot. That
+      would make "regressed" permanent: MA's shift data vanished 2026-08-18
+      when the '24 roles were wiped in PTV, and since nothing lands for MA
+      any more its last non-empty snapshot is pinned at 08-17 forever -- so
+      every future run would re-report it. A regression is an EVENT. It
+      should fire on the run where the drop happens and then go quiet, or
+      it trains everyone to ignore the warning that matters.
+    * It does not use "yesterday" literally. Runs are missed (a Civis pin
+      outage silently killed the misc-jobs runs for 18 days), and if the
+      previous calendar day landed nothing at all, every state would look
+      unchanged and a real regression would slip through. Anchoring to the
+      last date that actually has rows survives arbitrary gaps.
+    """
+    sql = f"""
+        WITH prev AS (
+          SELECT MAX(as_of_date) AS d
+          FROM `{RAW_TABLE}`
+          WHERE as_of_date < DATE '{as_of_date.isoformat()}'
+        )
+        SELECT state, COUNT(*) AS c
+        FROM `{RAW_TABLE}`
+        WHERE as_of_date = (SELECT d FROM prev)
+        GROUP BY state
+    """
+    try:
+        return {dict(r)["state"]: dict(r)["c"] for r in bq.query(sql)}
+    except Exception as e:
+        # Never let telemetry block the sync.
+        logger.warning(f"[BQ] prior-count lookup failed (continuing): {e}")
+        return {}
+
+
 def write_to_bq(
     bq: BigQueryConnector,
     rows_by_state: Dict[str, List[Dict[str, Any]]],
     as_of_date,
-) -> List[str]:
+    prior_counts: Optional[Dict[str, int]] = None,
+) -> Tuple[List[str], Dict[str, Dict[str, Any]]]:
     """
     Replace today's partition rows for the pulled states (idempotency on
-    rerun), then append fresh, per state. Returns states that landed cleanly.
+    rerun), then append fresh, per state.
+
+    Returns (states that landed cleanly, per-state stats for the run log).
     """
+    prior_counts = prior_counts or {}
     states = list(rows_by_state.keys())
     if not states:
-        return []
+        return [], {}
 
     # Single pre-delete for all pulled states. Only touches states we're about
     # to rewrite, so a PTV-failed state's prior snapshot is left intact.
@@ -255,18 +328,43 @@ def write_to_bq(
         logger.warning(f"[BQ] pre-delete failed (continuing): {e}")
 
     successful: List[str] = []
+    stats: Dict[str, Dict[str, Any]] = {}
     for state, rows in rows_by_state.items():
+        prior = prior_counts.get(state, 0)
         try:
             n = 0
             for chunk in _chunks(rows, INSERT_CHUNK):
                 bq.insert_rows(RAW_TABLE, chunk)
                 n += len(chunk)
-            if n:
-                logger.info(f"[BQ] {state}: inserted {n} rows")
             successful.append(state)
+            if n:
+                status = "ok"
+                logger.info(f"[BQ] {state}: inserted {n} rows")
+            elif prior:
+                # Had data as recently as the last snapshot, has none now.
+                status = "regressed"
+                logger.warning(
+                    f"[BQ] {state}: pulled 0 rows but the prior snapshot had "
+                    f"{prior} -- PTV has stopped returning shift data for this "
+                    "state. Expected if the election is over; otherwise "
+                    "investigate. The view still serves the last good "
+                    "snapshot, so downstream looks healthy either way."
+                )
+            else:
+                status = "empty"
+                logger.debug(f"[BQ] {state}: 0 rows (no program data)")
+            stats[state] = {
+                "rows_in": len(rows), "rows_written": n,
+                "prior_rows": prior, "status": status, "detail": None,
+            }
         except Exception as e:
             logger.exception(f"[BQ] {state}: insert failed -- {e}")
-    return successful
+            stats[state] = {
+                "rows_in": len(rows), "rows_written": 0,
+                "prior_rows": prior, "status": "failed",
+                "detail": f"{type(e).__name__}: {e}"[:1000],
+            }
+    return successful, stats
 
 
 # -- Stage 3: BQ view -> Airtable -------------------------------------------
@@ -301,19 +399,33 @@ def _map_to_airtable_fields(
 
 def _count_existing_keys(
     airtable: AirtableConnector, base_id: str, table: str, key_field: str,
-) -> Dict[str, int]:
+) -> Tuple[Dict[str, int], Dict[str, int]]:
     """
-    Return {normalized_key_value: count} of existing destination records.
-    Used to detect rows where the upsert key matches >1 existing record --
-    Airtable's batch_upsert 422s the whole batch in that case, so we skip
-    those keys per-record instead.
+    Return (exact_counts, normalized_counts) over existing destination records.
+
+    Airtable's performUpsert matches `fieldsToMergeOn` case-SENSITIVELY --
+    verified 2026-08-19 against a live base: with both `zz.casetest@…` and
+    `ZZ.CaseTest@…` present, an upsert keyed on the lowercase spelling patched
+    only the exact-case record and left the variant untouched. So the
+    EXACT-spelling count is what decides whether a key would 422 the batch,
+    and it alone gates the skip.
+
+    normalized_counts is diagnostics only. A key whose normalized count exceeds
+    its exact count has a case-variant twin in the destination: it upserts
+    fine, but it means one human holds two records, which is worth surfacing
+    before their data diverges. Counting normalized here and skipping on it --
+    as this function used to -- made the guard stricter than the operation it
+    guards, freezing a volunteer who would have patched cleanly.
     """
-    counts: Dict[str, int] = defaultdict(int)
+    exact: Dict[str, int] = defaultdict(int)
+    normalized: Dict[str, int] = defaultdict(int)
     for r in airtable.get_records(base_id, table):
         v = r["fields"].get(key_field)
         if isinstance(v, str) and v.strip():
-            counts[v.strip().lower()] += 1
-    return counts
+            stripped = v.strip()
+            exact[stripped] += 1
+            normalized[stripped.lower()] += 1
+    return exact, normalized
 
 
 def upsert_to_airtable(
@@ -321,50 +433,161 @@ def upsert_to_airtable(
     sync: SyncEntry,
     rows: List[Dict[str, Any]],
     upsert_key_bq: str,
-) -> int:
+) -> UpsertStats:
+    stats = UpsertStats(rows_in=len(rows))
     if not rows:
         logger.info(f"[AT][{sync.name}] no rows to upsert")
-        return 0
+        return stats
     upsert_key_at = sync.field_map[upsert_key_bq]
 
     # Pre-scan the destination for keys that already match multiple
     # records. The "Shifted Volunteers" tables have a second write path
-    # (an emergency self-add form) that can produce duplicates when a
-    # self-add later also syncs in via PTV. Pushing one of those emails
-    # through batch_upsert 422s the entire batch.
-    existing_counts = _count_existing_keys(
+    # (an emergency self-add form, plus hand-loads from
+    # ep-airtable-utilities' load_volunteers.py) that can produce duplicates
+    # when one of those later also syncs in via PTV. Pushing one of those
+    # emails through batch_upsert 422s the entire batch.
+    exact_counts, normalized_counts = _count_existing_keys(
         airtable, sync.base_id, sync.table, upsert_key_at,
     )
 
     records: List[Dict[str, Any]] = []
-    skipped_dupes: List[str] = []
     for r in rows:
         fields = _map_to_airtable_fields(r, sync.field_map)
         key_value = fields.get(upsert_key_at)
         if not key_value:
             # Drop rows missing the upsert key -- they'd create blank records
+            stats.skipped_blank += 1
             continue
-        if existing_counts.get(str(key_value).strip().lower(), 0) > 1:
-            skipped_dupes.append(str(key_value))
+        key = str(key_value).strip()
+        n_exact = exact_counts.get(key, 0)
+        if n_exact > 1:
+            # Genuinely ambiguous to Airtable: this would 422 the batch.
+            stats.skipped_dupe_exact.append(key)
             continue
+        if normalized_counts.get(key.lower(), 0) > n_exact:
+            # A case-variant twin exists. Airtable matches case-sensitively, so
+            # our key still resolves to exactly one record and patches it --
+            # record it and carry on rather than skipping.
+            stats.case_variants.append(key)
         records.append({"fields": fields})
 
-    if skipped_dupes:
+    if stats.skipped_dupe_exact:
         logger.warning(
-            f"[AT][{sync.name}] skipped {len(skipped_dupes)} record(s) due to "
-            f"duplicate keys already in destination on '{upsert_key_at}': "
-            f"{skipped_dupes}"
+            f"[AT][{sync.name}] SKIPPED {len(stats.skipped_dupe_exact)} "
+            f"record(s): '{upsert_key_at}' already matches >1 destination "
+            "record with the same exact spelling, which would 422 the whole "
+            "batch. These volunteers are NOT being updated and will stay "
+            "stale until the duplicates are merged in Airtable: "
+            f"{stats.skipped_dupe_exact}"
+        )
+    if stats.case_variants:
+        logger.warning(
+            f"[AT][{sync.name}] {len(stats.case_variants)} record(s) have a "
+            f"case-variant twin in the destination on '{upsert_key_at}'. "
+            "Upserted normally (Airtable matches case-sensitively), but each "
+            "one means two records for one human -- worth merging: "
+            f"{stats.case_variants}"
         )
 
     if not records:
         logger.info(f"[AT][{sync.name}] no upsertable records this run")
-        return 0
+        return stats
 
     airtable.batch_upsert(
         sync.base_id, sync.table, records, key_fields=[upsert_key_at],
     )
+    stats.rows_written = len(records)
     logger.info(f"[AT][{sync.name}] upserted {len(records)} records")
-    return len(records)
+    return stats
+
+
+# -- Run log ----------------------------------------------------------------
+
+
+def _ddl_path(filename: str) -> str:
+    return os.path.join(os.path.dirname(os.path.abspath(__file__)), "bq", filename)
+
+
+def ensure_log_table(bq: BigQueryConnector) -> bool:
+    """
+    Create ep.shift_sync_log if absent so a fresh container self-heals. The
+    `ep` dataset already exists and is NOT created here -- `com-dbt@` has no
+    bigquery.datasets.create (see misc_jobs/asana_ep_kanban.py:ensure_tables).
+
+    Returns False if the table couldn't be ensured; the run log is telemetry
+    and must never take the sync down with it.
+    """
+    try:
+        existed = bq.table_exists(SYNC_LOG_TABLE)
+        with open(_ddl_path("shift_sync_log.sql"), "r", encoding="utf-8") as fh:
+            bq.query(fh.read())  # CREATE TABLE IF NOT EXISTS -- idempotent
+        if not existed:
+            # A just-created table isn't immediately visible to the streaming
+            # insert endpoint (BQ eventual consistency -> transient 404).
+            logger.info("[LOG] table created; pausing for streaming availability")
+            time.sleep(8)
+        return True
+    except Exception as e:
+        logger.warning(f"[LOG] could not ensure {SYNC_LOG_TABLE}: {e}")
+        return False
+
+
+def write_sync_log(
+    bq: BigQueryConnector,
+    run_at: datetime,
+    as_of_date,
+    pull_stats: Dict[str, Dict[str, Any]],
+    upsert_stats: Dict[str, Tuple[str, UpsertStats]],
+    skipped_syncs: Dict[str, Tuple[str, str]],
+) -> None:
+    """
+    Append one row per (stage, scope) for this run. Failures here are logged
+    and swallowed -- telemetry never fails the sync.
+    """
+    rows: List[Dict[str, Any]] = []
+    base = {"run_at": run_at.isoformat(), "as_of_date": as_of_date.isoformat()}
+
+    for state, st in sorted(pull_stats.items()):
+        rows.append({
+            **base, "stage": "ptv_pull", "scope": state, "state": state,
+            "status": st["status"], "rows_in": st["rows_in"],
+            "rows_written": st["rows_written"], "prior_rows": st["prior_rows"],
+            "detail": st["detail"],
+        })
+
+    for name, (state, st) in sorted(upsert_stats.items()):
+        keys = {
+            "skipped_dupe_exact": st.skipped_dupe_exact,
+            "case_variants": st.case_variants,
+        }
+        rows.append({
+            **base, "stage": "airtable_upsert", "scope": name, "state": state,
+            "status": "ok", "rows_in": st.rows_in,
+            "rows_written": st.rows_written,
+            "skipped_blank": st.skipped_blank,
+            "skipped_dupe_exact": len(st.skipped_dupe_exact),
+            "case_variants": len(st.case_variants),
+            "skipped_keys": (
+                json.dumps(keys)
+                if st.skipped_dupe_exact or st.case_variants else None
+            ),
+        })
+
+    for name, (state, reason) in sorted(skipped_syncs.items()):
+        status = "failed" if reason.startswith("failed") else "skipped"
+        rows.append({
+            **base, "stage": "airtable_upsert", "scope": name, "state": state,
+            "status": status, "detail": reason[:1000],
+        })
+
+    if not rows:
+        return
+    try:
+        for chunk in _chunks(rows, INSERT_CHUNK):
+            bq.insert_rows(SYNC_LOG_TABLE, chunk)
+        logger.info(f"[LOG] wrote {len(rows)} row(s) to {SYNC_LOG_TABLE}")
+    except Exception as e:
+        logger.warning(f"[LOG] failed to write run log (continuing): {e}")
 
 
 # -- Main -------------------------------------------------------------------
@@ -400,10 +623,16 @@ def main(argv: List[str]) -> int:
 
     logger.info(f"=== Shift volunteers sync -- as_of_date={as_of_date} ===")
 
+    run_at = datetime.now(timezone.utc)
     failed_states: List[str] = []
     failed_syncs: List[str] = []
+    # For the run log: {sync name: (state, UpsertStats)} and, for targets that
+    # never got as far as an upsert, {sync name: (state, reason)}.
+    upsert_stats: Dict[str, Tuple[str, UpsertStats]] = {}
+    skipped_syncs: Dict[str, Tuple[str, str]] = {}
 
     with PTVConnector() as ptv, BigQueryConnector() as bq:
+        log_ok = ensure_log_table(bq)
         config = load_config(bq)
         if args.states:
             pull_states = [
@@ -422,13 +651,29 @@ def main(argv: List[str]) -> int:
         )
         failed_states.extend(ptv_failed)
 
-        bq_successful = write_to_bq(bq, rows_by_state, as_of_date)
+        # Read the pre-run state of the table so a state that stopped
+        # reporting can be told from one that never reported.
+        priors = prior_state_counts(bq, as_of_date)
+
+        bq_successful, pull_stats = write_to_bq(
+            bq, rows_by_state, as_of_date, priors,
+        )
         for state in rows_by_state:
             if state not in bq_successful:
                 failed_states.append(state)
 
+        regressed = [s for s, st in pull_stats.items()
+                     if st["status"] == "regressed"]
+        if regressed:
+            logger.warning(
+                f"[BQ] {len(regressed)} state(s) went to zero rows this run "
+                f"after having data previously: {sorted(regressed)}"
+            )
+
         if args.bq_only:
             logger.info("[AT] skipped -- --bq-only")
+            for sync in config.syncs:
+                skipped_syncs[sync.name] = (sync.state, "skipped -- --bq-only")
         elif not config.syncs:
             logger.info("[AT] no enabled sync targets -- nothing to upsert")
         else:
@@ -446,6 +691,10 @@ def main(argv: List[str]) -> int:
                             f"[AT][{sync.name}] skipped -- state {sync.state} "
                             "not pulled this run (--states subset)"
                         )
+                        skipped_syncs[sync.name] = (
+                            sync.state,
+                            "skipped -- state not pulled (--states subset)",
+                        )
                         continue
                     if sync.state not in bq_successful:
                         logger.warning(
@@ -453,20 +702,41 @@ def main(argv: List[str]) -> int:
                             "did not sync"
                         )
                         failed_syncs.append(sync.name)
+                        skipped_syncs[sync.name] = (
+                            sync.state,
+                            "failed -- state did not land in BigQuery",
+                        )
                         continue
                     try:
-                        upsert_to_airtable(
-                            at, sync, view_rows.get(sync.state, []),
-                            config.upsert_key_bq,
+                        upsert_stats[sync.name] = (
+                            sync.state,
+                            upsert_to_airtable(
+                                at, sync, view_rows.get(sync.state, []),
+                                config.upsert_key_bq,
+                            ),
                         )
                     except Exception as e:
                         logger.exception(
                             f"[AT][{sync.name}] upsert failed -- {e}"
                         )
                         failed_syncs.append(sync.name)
+                        skipped_syncs[sync.name] = (
+                            sync.state,
+                            f"failed -- {type(e).__name__}: {e}",
+                        )
 
+        if log_ok:
+            write_sync_log(
+                bq, run_at, as_of_date, pull_stats, upsert_stats,
+                skipped_syncs,
+            )
+
+    stale = sorted(
+        name for name, (_, st) in upsert_stats.items() if st.skipped_dupe_exact
+    )
     logger.info(
-        f"=== Done. failed_states={failed_states} failed_syncs={failed_syncs} ==="
+        f"=== Done. failed_states={failed_states} "
+        f"failed_syncs={failed_syncs} targets_with_skipped_volunteers={stale} ==="
     )
     return 1 if (failed_states or failed_syncs) else 0
 
