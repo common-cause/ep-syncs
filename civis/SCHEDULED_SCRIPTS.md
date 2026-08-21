@@ -464,6 +464,7 @@ To pause a sync without removing it, set `enabled = FALSE`.
 |---|---|---|
 | `asana_ep_kanban` | `daily` | Snapshots every enabled board in `ep.asana_sync_sources` (today: the NM `EP Volunteer Onboarding Kanban`) into `asana_raw_2026.ep_kanban_tasks` + `asana_raw_2026.projects`, partitioned by `as_of_date`. READ-ONLY toward Asana. Daily grain is load-bearing: Asana exposes only a task's CURRENT section, so a skipped night permanently loses that day's stage-transition evidence — do not park this task casually. Feeds `ep_2026_cleaned.asana_pipeline` + the `source_system='asana'` branch of `volunteers`. Design: `docs/asana_nm_sync_spec.md`. |
 | `infrastructure_sheet` | `daily` | Melts the two Infrastructure tabs of the 50-State EP Coalition Plan spreadsheet (`Infrastructure (General)` / `(Primary)`) into `ep_2026_raw.coalition_plan_infrastructure` — one row per (state, sheet column), cell text verbatim, ~1,632 rows/night, partitioned by `as_of_date` (stamped in **ET**, matching the runner's weekday convention). READ-ONLY toward the spreadsheet: program staff own it. Same-day reruns replace the day's partition via a load job (no streaming buffer, so a Civis retry is always clean). Parsed by `ep_2026_cleaned.coalition_plan_infrastructure`; consumed by ep-dashboards' infrastructure marts + Hex pages. Fails loudly on a missing/renamed tab or a row-3 layout change, and logs the header row every run so a column rename is visible the morning it happens. Design: `docs/coalition_plan_infrastructure_sync_spec.md`. |
+| `hub_host_tracker` | `daily` | Refreshes the `Volunteer Landing Page` of every enabled tracker in `ep.hub_host_trackers` (today: MI's `EP Hub Host Tracker`) from that state's quiz bases — one row per volunteer who submitted any registered quiz, joined to `ep_2026_cleaned.volunteers` for phone/county and to all-time `ptv_raw_2026.shift_volunteers` for the `Ever Shifted?` latch. Writes exactly one tab (hidden `_data`) plus a README; the visible page is an array-formula mirror of it, and the human-owned `Assigned Host` dropdown sits outside the mirrored block, so nothing a staffer typed is ever clobbered and no keyed per-column update is needed. Rows are never removed or reordered — column A of `_data` is an append-only ledger read back each run, so a deleted Airtable quiz record is carried forward and flagged rather than shifting every host assignment below it up by one. Per-host tabs are hand-cloned from `TEMPLATE` and pull their distribution list with a single `FILTER`; those formulas are installed only by `--install-scaffolding`, never nightly, because that tab's kit checklist is program-staff content. READ-ONLY toward Airtable and toward the `Hosts` tab. Design: `docs/hub_host_tracker_spec.md`. |
 
 **Retired tasks:** `event_975203_signups` (Mobilize event 975203 FL-training
 signup roster → Google Sheet for FL program, ran `mon` Jul 14 – Aug 18 2026;
@@ -474,16 +475,38 @@ removed, per the retire contract).
 
 #### Status (2026-08-19)
 
-- **`infrastructure_sheet` registered 2026-08-19** (assignment from
-  ep-dashboards, which had been running the same melt from a laptop Task
-  Scheduler job into `ep_dashboards.infrastructure_raw`). Verified locally
-  before commit: 1,632 rows landed, same-day rerun replaced them cleanly, and
-  the cleaned view is row-for-row identical to the ep-dashboards dbt model it
-  replaces. **Needs no new credential and no pin bump** — but the entrypoint's
-  extras gained `pandas` (it is *not* part of the `bigquery` extra, and this
-  task loads via `load_dataframe`). Awaiting its first green Civis run;
-  ep-dashboards keeps its local step until then (different destination table, so
-  the two cannot collide).
+- **`infrastructure_sheet` registered 2026-08-19, LIVE on Civis 2026-08-20**
+  (assignment from ep-dashboards, which had been running the same melt from a
+  laptop Task Scheduler job into `ep_dashboards.infrastructure_raw`). Verified
+  locally before commit: 1,632 rows landed, same-day rerun replaced them
+  cleanly, and the cleaned view is row-for-row identical to the ep-dashboards
+  dbt model it replaces. **Needed no new credential and no pin bump** — but the
+  entrypoint's extras gained `pandas` (it is *not* part of the `bigquery` extra,
+  and this task loads via `load_dataframe`).
+  **First green run: ad-hoc, 2026-08-20 16:20:34 UTC** (the push landed after
+  that morning's 3 AM ET fire). 1,632 rows, and exactly **one distinct
+  `synced_at` in the partition** — a local test run had written the same
+  partition hours earlier, so this also proves the pre-delete works on the real
+  container, not just locally. ep-dashboards pinged; they keep their local step
+  until they re-point `sources.yml` (different destination table, so the two
+  cannot collide).
+- **`hub_host_tracker` registered 2026-08-21** (new MI ask). **Needs no new
+  credential, no pin bump and no entrypoint change** — it uses
+  `SheetsWriterConnector` + `BigQueryConnector`, both covered by the existing
+  `[bigquery,sheets]` extras at the v0.7.1 pin, and both
+  `BIGQUERY_CREDENTIALS_PASSWORD` and `GOOGLE_SHEETS_CREDENTIALS_PASSWORD` are
+  already on the job. Verified locally before commit: 40 MI volunteers from the
+  two MI quiz bases landed on the landing page, a second run reported
+  `40 kept + 0 new` (ledger stable), the scaffolding pass is idempotent, and
+  the host `FILTER` was exercised end to end — two volunteers assigned to
+  Kevin Fisher appeared on his tab with the right seven columns, including a
+  deliberately case- and whitespace-mangled `"kevin fisher "` (test assignments
+  reverted). Ledger carry-forward, ordering and duplicate-key collapse are
+  covered by direct tests of `merge_with_ledger`. Awaiting its first green
+  Civis run.
+  **Before registering another state:** the `sheets-controllers@` SA must be a
+  writer on that spreadsheet — unlike the volunteer-export sheets, this job
+  does NOT create the file, and program staff own it.
 - **Incident 2026-07-30 → 08-17:** every nightly run failed at import
   (`ImportError: cannot import name 'AsanaConnector'`) because the
   `asana_ep_kanban` task was registered 2026-07-29 without bumping the

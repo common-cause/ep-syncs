@@ -29,3 +29,10 @@ jobs:
                   # the week, and the snapshot is how we know WHEN a state's
                   # setup landed. Two Sheets reads and ~1,600 rows a night, so
                   # daily costs nothing.
+
+  hub_host_tracker:
+    enabled: true
+    days: daily   # quiz completions arrive any day and staff assign hosts off
+                  # this page, so a stale page means a volunteer waits a day for
+                  # their kit. Also refreshes Shifted? daily. ~40 rows and a
+                  # handful of Sheets writes per registered state.

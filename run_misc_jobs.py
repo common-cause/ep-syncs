@@ -42,7 +42,7 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-from misc_jobs import asana_ep_kanban, infrastructure_sheet
+from misc_jobs import asana_ep_kanban, hub_host_tracker, infrastructure_sheet
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +86,14 @@ JOBS: List[MiscJob] = [
                     "melted to one row per (state, sheet column). Parsed by "
                     "ep_2026_cleaned.coalition_plan_infrastructure.",
         run=infrastructure_sheet.run,
+    ),
+    MiscJob(
+        key="hub_host_tracker",
+        description="Registered EP materials-distribution host trackers "
+                    "(ep.hub_host_trackers) -> each state's Volunteer Landing "
+                    "Page, from its quiz bases. Host tabs FILTER off it; the "
+                    "Assigned Host column stays human-owned. MI today.",
+        run=hub_host_tracker.run,
     ),
 ]
 
