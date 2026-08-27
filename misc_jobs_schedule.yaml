@@ -30,6 +30,14 @@ jobs:
                   # setup landed. Two Sheets reads and ~1,600 rows a night, so
                   # daily costs nothing.
 
+  partner_source_codes:
+    enabled: true
+    days: daily   # partners submit the engagement form and staff mint codes on
+                  # any day, and a code issued but not captured collects
+                  # volunteers into no sheet until someone notices. Daily keeps
+                  # the resolution queue current for whenever the weekly review
+                  # happens. Two Sheets reads, ~260 rows a night.
+
   hub_host_tracker:
     enabled: true
     days: daily   # quiz completions arrive any day and staff assign hosts off

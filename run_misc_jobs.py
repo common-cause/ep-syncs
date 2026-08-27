@@ -42,7 +42,12 @@ from zoneinfo import ZoneInfo
 import yaml
 from dotenv import load_dotenv
 
-from misc_jobs import asana_ep_kanban, hub_host_tracker, infrastructure_sheet
+from misc_jobs import (
+    asana_ep_kanban,
+    hub_host_tracker,
+    infrastructure_sheet,
+    partner_source_codes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -86,6 +91,15 @@ JOBS: List[MiscJob] = [
                     "melted to one row per (state, sheet column). Parsed by "
                     "ep_2026_cleaned.coalition_plan_infrastructure.",
         run=infrastructure_sheet.run,
+    ),
+    MiscJob(
+        key="partner_source_codes",
+        description="2026 EP Partner Engagement Form (both tabs) -> "
+                    "ep_2026_raw.partner_source_codes. The only capture of "
+                    "which codes were ISSUED to which partner; everything else "
+                    "only sees a code once a volunteer uses it. Reconciled by "
+                    "ep_2026_cleaned.source_code_resolution.",
+        run=partner_source_codes.run,
     ),
     MiscJob(
         key="hub_host_tracker",
