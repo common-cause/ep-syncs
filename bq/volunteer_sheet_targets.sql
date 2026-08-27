@@ -101,3 +101,137 @@ SELECT
 FROM current_codes cc
 JOIN external_codes ec USING (code_lower)
 WHERE cc.code_lower NOT IN ('previous_years', 'quiz', 'actionnetwork');
+
+-- ---------------------------------------------------------------------------
+-- Seed 3 (2026-08-24): the codes actually ISSUED to 2026 partners.
+--
+-- Seeds 1-2 could only see codes with historical volume, so every code handed
+-- to a partner for 2026 that nobody has used yet was invisible to them. The
+-- issued codes are recorded in the "Source Codes" tab of the 2026 Election
+-- Protection Partner Engagement Form responses sheet
+-- (1H3p3rzsRdJr4wnj9Pmn6Ck4CBMLv0w44gzHUNb9tb3g) -- column A the partner,
+-- column B the protectthevote.net link with the code in ?source=. That tab is
+-- the source of truth for what a partner was told to use; this registry is
+-- what the sync captures. When they disagree the partner's signups land in no
+-- sheet, silently, so they must be reconciled whenever new codes are issued.
+--
+-- Registering a code with zero signups is deliberate: the sheet is created
+-- empty and is ready to hand over the moment the first volunteer arrives.
+--
+-- Re-runnable (MERGE on target_key). Note Rob's 2026-07-09 curation pass is
+-- NOT reflected in this file -- it was applied directly in BQ.
+-- ---------------------------------------------------------------------------
+
+MERGE `proj-tmc-mem-com.ep.volunteer_sheet_targets` T
+USING (
+  SELECT * FROM UNNEST([
+    STRUCT<code STRING, title_label STRING, org STRING>
+    ('barbarajordanleadershipinstitute', 'BarbaraJordanLeadershipInstitute', 'Barbara Jordan Leadership Institute'),
+    ('lwvva',                  'LWVVA',                  'League of Women Voters of Virginia'),
+    ('narf',                   'narf',                   'NARF'),
+    ('upvoteva',               'UpVoteVA',               'UpVote VA'),
+    ('tcrp',                   'TCRP',                   'TCRP'),
+    ('organizetn',             'OrganizeTN',             'Organize TN'),
+    ('acluoftx',               'ACLUofTX',               'ACLU of TX'),
+    ('wicivicpowertable',      'WICivicPowerTable',      'WI Civic Power Table'),
+    ('chicagolcforcivilrights','ChicagoLCforCivilRights',"Chicago Lawyers' Committee for Civil Rights"),
+    ('blueprintnc',            'BlueprintNC',            'Blueprint North Carolina'),
+    ('montanavoices',          'MontanaVoices',          'Montana Voices'),
+    ('acluofwifoundation',     'ACLUofWIFoundation',     'ACLU of Wisconsin Foundation'),
+    ('acluofalabama',          'ACLUofAlabama',          'ACLU of Alabama'),
+    ('lwval',                  'LWVAL',                  'League of Women Voters of Alabama'),
+    ('civictn',                'CivicTN',                'Civic TN')
+  ])
+) S
+ON T.target_key = REGEXP_REPLACE(S.code, r'[^a-z0-9]+', '-')
+   AND T.target_type = 'source_code'
+WHEN NOT MATCHED THEN INSERT (
+  target_key, target_type, sheet_title, source_codes, enabled, share_with,
+  registered_by, registered_at, updated_at, notes
+) VALUES (
+  REGEXP_REPLACE(S.code, r'[^a-z0-9]+', '-'),
+  'source_code',
+  CONCAT('EP Volunteers 2026 - ', S.title_label),
+  [S.code],
+  TRUE,
+  CAST(NULL AS ARRAY<STRING>),
+  'rob curation 2026-08-24 (partner engagement form Source Codes tab)',
+  CURRENT_TIMESTAMP(),
+  CURRENT_TIMESTAMP(),
+  CONCAT(S.org, '; code issued for 2026, no signups at registration time')
+);
+
+-- Two partners were issued a DIFFERENT spelling than the code their existing
+-- sheet captures. Lump the issued spelling in rather than creating a second
+-- sheet -- one partner, one volunteer list.
+--   avlaz  <- avilaz : the form issues ?source=AVILAZ (unused so far: latent).
+--   pbcvrc <- pbvrc  : 43 volunteers were already signing up under pbvrc and
+--                      landing in NO sheet. This is the live-breakage case.
+
+UPDATE `proj-tmc-mem-com.ep.volunteer_sheet_targets`
+SET source_codes = ARRAY_CONCAT(source_codes, ['avilaz']),
+    updated_at   = CURRENT_TIMESTAMP(),
+    notes        = CONCAT(IFNULL(notes, ''), '; lumped avilaz -- spelling issued on the partner engagement form (2026-08-24)')
+WHERE target_key = 'avlaz'
+  AND NOT EXISTS (SELECT 1 FROM UNNEST(source_codes) c WHERE c = 'avilaz');
+
+UPDATE `proj-tmc-mem-com.ep.volunteer_sheet_targets`
+SET source_codes = ARRAY_CONCAT(source_codes, ['pbvrc']),
+    updated_at   = CURRENT_TIMESTAMP(),
+    notes        = CONCAT(IFNULL(notes, ''), '; lumped pbvrc -- spelling issued on the partner engagement form, 43 vols were unsheeted (2026-08-24)')
+WHERE target_key = 'pbcvrc'
+  AND NOT EXISTS (SELECT 1 FROM UNNEST(source_codes) c WHERE c = 'pbvrc');
+
+-- ---------------------------------------------------------------------------
+-- Seed 4 (2026-08-26): partner codes with real volume that no target covered.
+--
+-- These came out of sync_volunteer_sheets.py's own unregistered-code warning
+-- (report_unregistered_codes) -- partners whose volunteers were accumulating
+-- in BQ with no sheet to hand them. They were NOT on the partner engagement
+-- form's Source Codes tab either; they have been added to it alongside these
+-- rows, so the tab and this registry stay in step.
+--
+-- CC-internal codes in that same warning (ccaz, ccfl, ccri, common cause
+-- oregon) are excluded on purpose per the 2026-07-09 rule: cc+state codes are
+-- internal CC orgs, not partner sheets. Generic acquisition codes (members,
+-- engage, adwords, footer, email-*) are not partners at all.
+--
+-- Only frrc / aclufl / lwvmn have a confidently known org behind them. The
+-- rest are registered under the code itself rather than an invented org name
+-- -- see notes. Rename sheet_title + notes once identity is confirmed (that
+-- orphans the old sheet, so do it before anyone is given the link).
+--
+-- Re-runnable (MERGE on target_key).
+-- ---------------------------------------------------------------------------
+
+MERGE `proj-tmc-mem-com.ep.volunteer_sheet_targets` T
+USING (
+  SELECT * FROM UNNEST([
+    STRUCT<code STRING, org STRING>
+    ('frrc',      'Florida Rights Restoration Coalition'),
+    ('aclufl',    'ACLU of Florida'),
+    ('lwvmn',     'League of Women Voters of Minnesota'),
+    ('htff',      'Harriet Tubman Freedom Fighters'),
+    ('corazonaz', 'IDENTITY UNCONFIRMED -- registered under the raw code'),
+    ('poder',     'IDENTITY UNCONFIRMED -- registered under the raw code'),
+    ('imc',       'IDENTITY UNCONFIRMED -- may be the "Integrity Matters" row on the engagement form; merge into one target if so'),
+    ('aatbfl',    'IDENTITY UNCONFIRMED -- may be a chapter of the existing aatbf target; merge into one target if so')
+  ])
+) S
+ON T.target_key = REGEXP_REPLACE(S.code, r'[^a-z0-9]+', '-')
+   AND T.target_type = 'source_code'
+WHEN NOT MATCHED THEN INSERT (
+  target_key, target_type, sheet_title, source_codes, enabled, share_with,
+  registered_by, registered_at, updated_at, notes
+) VALUES (
+  REGEXP_REPLACE(S.code, r'[^a-z0-9]+', '-'),
+  'source_code',
+  CONCAT('EP Volunteers 2026 - ', S.code),
+  [S.code],
+  TRUE,
+  CAST(NULL AS ARRAY<STRING>),
+  'rob curation 2026-08-26 (unregistered-code warning backfill)',
+  CURRENT_TIMESTAMP(),
+  CURRENT_TIMESTAMP(),
+  S.org
+);

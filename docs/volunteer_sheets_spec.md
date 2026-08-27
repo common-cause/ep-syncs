@@ -99,6 +99,45 @@ target covers; at build time that list included: riseup (424), common cause
 oregon (405), ccaz (193), civicne (164), indivisibleaz (87), cpc (78),
 puente (60), members (39), ccri (32), and a few smaller.
 
+### 4.1 Two lists of codes, and the silent gap between them (2026-08-26)
+
+A partner code exists in two places, and only one of them is this registry:
+
+1. **What the partner was told to use** — the `Source Codes` tab of the *2026
+   Election Protection Partner Engagement Form (Responses)* sheet
+   (`1H3p3rzsRdJr4wnj9Pmn6Ck4CBMLv0w44gzHUNb9tb3g`), owned by EP program
+   staff. Column A the org, column B the `protectthevote.net/?source=CODE`
+   link they were handed, column C (added 2026-08-26) the volunteer
+   spreadsheet this sync maintains for them.
+2. **What this sync captures** — `source_codes` in the registry.
+
+When those disagree, the partner's signups land in **no sheet at all, with no
+error anywhere**: the code isn't in any target, so nothing selects those rows,
+and the unregistered-code warning only fires above a volume threshold. Two
+live cases found on 2026-08-26:
+
+- `pbvrc` — the form issues `?source=pbvrc`, the target carried only
+  `pbcvrc`. 43 volunteers had been accumulating outside the sheet.
+- `avilaz` — the form issues `?source=AVILAZ`, the target carried only
+  `avlaz`. Unused so far, so latent rather than live.
+
+Both were fixed by lumping the issued spelling into the existing partner's
+target (one partner, one volunteer list) rather than creating a second sheet.
+
+**So: whenever codes are issued or the form tab changes, reconcile the two.**
+Registering a code with zero signups is correct and expected — the sheet is
+created empty and is ready the moment the first volunteer arrives. Seeds 3
+and 4 in `bq/volunteer_sheet_targets.sql` are that reconciliation for
+2026-08-26 (15 issued-but-unregistered codes, plus 8 codes that had real
+volume and no target).
+
+Where a code's owning org could not be identified with confidence
+(`corazonaz`, `poder`, `imc`, `aatbfl`), the target is registered under the
+**raw code** rather than a guessed org name, and says so in `notes` — putting
+the wrong partner's name on a volunteer list is worse than an ugly title.
+Renaming `sheet_title` later orphans the existing sheet and creates a new one,
+so confirm identity before anyone is given the link.
+
 ## 5. Script + job shape
 
 `sync_volunteer_sheets.py` at project root:
