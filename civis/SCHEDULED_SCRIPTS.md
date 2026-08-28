@@ -487,6 +487,7 @@ To pause a sync without removing it, set `enabled = FALSE`.
 |---|---|---|
 | `asana_ep_kanban` | `daily` | Snapshots every enabled board in `ep.asana_sync_sources` (today: the NM `EP Volunteer Onboarding Kanban`) into `asana_raw_2026.ep_kanban_tasks` + `asana_raw_2026.projects`, partitioned by `as_of_date`. READ-ONLY toward Asana. Daily grain is load-bearing: Asana exposes only a task's CURRENT section, so a skipped night permanently loses that day's stage-transition evidence — do not park this task casually. Feeds `ep_2026_cleaned.asana_pipeline` + the `source_system='asana'` branch of `volunteers`. Design: `docs/asana_nm_sync_spec.md`. |
 | `infrastructure_sheet` | `daily` | Melts the two Infrastructure tabs of the 50-State EP Coalition Plan spreadsheet (`Infrastructure (General)` / `(Primary)`) into `ep_2026_raw.coalition_plan_infrastructure` — one row per (state, sheet column), cell text verbatim, ~1,632 rows/night, partitioned by `as_of_date` (stamped in **ET**, matching the runner's weekday convention). READ-ONLY toward the spreadsheet: program staff own it. Same-day reruns replace the day's partition via a load job (no streaming buffer, so a Civis retry is always clean). Parsed by `ep_2026_cleaned.coalition_plan_infrastructure`; consumed by ep-dashboards' infrastructure marts + Hex pages. Fails loudly on a missing/renamed tab or a row-3 layout change, and logs the header row every run so a column rename is visible the morning it happens. Design: `docs/coalition_plan_infrastructure_sync_spec.md`. |
+| `partner_source_codes` | `daily` | Snapshots **both** tabs of the 2026 EP Partner Engagement Form (`Form Responses 1` + `Source Codes`) into `ep_2026_raw.partner_source_codes`, ~161 rows/night, partitioned by `as_of_date`. The only capture of the **issuing** side of a source code — every other view of a code is downstream of a volunteer *using* one, so an issued-but-unused code, or one whose spelling drifted between issuance and capture, is invisible everywhere else. READ-ONLY toward the form; deliberately narrow on PII (org labels only, no requester names/emails). Reconciled by `ep_2026_cleaned.source_code_resolution`. Registered 2026-08-26 (`9cef07e`); confirmed running 2026-08-28. Design: `docs/volunteer_sheets_spec.md` §4.1. |
 | `hub_host_tracker` | `daily` | Refreshes the `Volunteer Landing Page` of every enabled tracker in `ep.hub_host_trackers` (today: MI's `EP Hub Host Tracker`) from that state's quiz bases — one row per volunteer who submitted any registered quiz, joined to `ep_2026_cleaned.volunteers` for phone/county and to all-time `ptv_raw_2026.shift_volunteers` for the `Ever Shifted?` latch. Writes exactly one tab (hidden `_data`) plus a README; the visible page is an array-formula mirror of it, and the human-owned `Assigned Host` dropdown sits outside the mirrored block, so nothing a staffer typed is ever clobbered and no keyed per-column update is needed. Rows are never removed or reordered — column A of `_data` is an append-only ledger read back each run, so a deleted Airtable quiz record is carried forward and flagged rather than shifting every host assignment below it up by one. Per-host tabs are hand-cloned from `TEMPLATE` and pull their distribution list with a single `FILTER`; those formulas are installed only by `--install-scaffolding`, never nightly, because that tab's kit checklist is program-staff content. READ-ONLY toward Airtable and toward the `Hosts` tab. Design: `docs/hub_host_tracker_spec.md`. |
 
 **Retired tasks:** `event_975203_signups` (Mobilize event 975203 FL-training
@@ -513,12 +514,14 @@ removed, per the retire contract).
   container, not just locally. ep-dashboards pinged; they keep their local step
   until they re-point `sources.yml` (different destination table, so the two
   cannot collide).
-- **`hub_host_tracker` registered 2026-08-21** (new MI ask). **Needs no new
-  credential, no pin bump and no entrypoint change** — it uses
-  `SheetsWriterConnector` + `BigQueryConnector`, both covered by the existing
-  `[bigquery,sheets]` extras at the v0.7.1 pin, and both
-  `BIGQUERY_CREDENTIALS_PASSWORD` and `GOOGLE_SHEETS_CREDENTIALS_PASSWORD` are
-  already on the job. Verified locally before commit: 40 MI volunteers from the
+- **`hub_host_tracker` registered 2026-08-21. LIVE — first green Civis run
+  2026-08-28** (ad-hoc, run 857135415: `ok=4`, MI `40 kept + 0 new`).
+  ⚠️ It was registered on the claim that it **"needs no new credential, no pin
+  bump and no entrypoint change"** — the credentials and extras were indeed
+  already covered, but **the pin claim was wrong and broke every nightly run
+  2026-08-25..08-28**: it calls `SheetsWriterConnector.open_spreadsheet`, which
+  did not exist until ccef-connections v0.8.0, against a v0.7.1 pin. Import-time
+  coverage is not call-time coverage. Pin is now v0.12.1. Verified locally before commit: 40 MI volunteers from the
   two MI quiz bases landed on the landing page, a second run reported
   `40 kept + 0 new` (ledger stable), the scaffolding pass is idempotent, and
   the host `FILTER` was exercised end to end — two volunteers assigned to
