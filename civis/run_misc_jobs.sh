@@ -29,6 +29,6 @@
 # loads via BigQueryConnector.load_dataframe, and pandas is its OWN extra -- the
 # bigquery extra does not pull it). The base image ships pandas, but naming it
 # here means the job doesn't depend on that staying true.
-pip install "ccef-connections[bigquery,sheets,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.12.0"
+pip install "ccef-connections[bigquery,sheets,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.12.1"
 pip install pyyaml tzdata
 python app/run_misc_jobs.py

@@ -1,8 +1,10 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-08-28 (ccef-connections pins bumped to v0.12.0 on BOTH the
+*Last verified: 2026-08-28 (ccef-connections pins bumped to v0.12.1 on BOTH the
 misc jobs runner and the volunteer sheets sync, clearing two separate
-pin-drift outages — see each job's Failure mode / Status). Previously verified
+pin-drift outages — see each job's Failure mode / Status. Misc jobs confirmed
+green by an ad-hoc run the same day; the sheets job's zero-volunteer targets
+needed a second release, v0.12.1, and are unverified until the next run). Previously verified
 2026-08-19 (`infrastructure_sheet` task registered on the misc jobs runner;
 that job's `APIs:` line corrected). Volunteer sheets sync created +
 scheduled in Civis 2026-08-11. Shift sync decoupled to a national pull +
@@ -322,7 +324,7 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - Script exits non-zero if any selected target failed; per-target failures
   are isolated (one bad sheet doesn't block the rest).
 - **A target with zero volunteers used to fail to provision** (fixed in
-  ccef-connections v0.12.0, pinned here 2026-08-28). The `_data` tab holds
+  ccef-connections **v0.12.1**, pinned here 2026-08-28). The `_data` tab holds
   only its header, `write_worksheet` sizes the grid to exactly one row, and
   Sheets refuses to freeze every visible row. This is the *normal* state of a
   target registered the moment its source code is issued, before any
@@ -331,6 +333,14 @@ To pause a sync without removing it, set `enabled = FALSE`.
   08-28 while the other 158 targets updated fine, so nobody lost data but the
   exit-1 signal was worthless for four days. If this recurs, check the pin
   before you touch the registry.
+  **It took two releases, and v0.12.0 alone is worse than useless here.**
+  A header-only tab is a fight between two operations that both insist on the
+  same row: `format_header_row` freezes row 1, `write_worksheet` resizes the
+  grid to exactly `len(data)`. v0.12.0 fixed only the first (grow to 2, then
+  freeze), so the sheet provisioned once and then failed on *every* later run,
+  because the next write tried to shrink a frozen row 1 back to a 1-row grid.
+  All 15 failed again on the 08-28 verification run. v0.12.1 fixes the other
+  half. **Never pin this job to v0.12.0.**
 - Reruns are idempotent: sheets are looked up by title within their
   subfolder; `_data`/`README` are rewritten, `Volunteers` and any
   partner-added tabs/columns are left alone.
