@@ -1,7 +1,10 @@
 # Scheduled Scripts — EP Syncs
 
-*Last verified: 2026-08-19 (`infrastructure_sheet` task registered on the misc
-jobs runner; that job's `APIs:` line corrected). Volunteer sheets sync created +
+*Last verified: 2026-08-28 (ccef-connections pins bumped to v0.12.0 on BOTH the
+misc jobs runner and the volunteer sheets sync, clearing two separate
+pin-drift outages — see each job's Failure mode / Status). Previously verified
+2026-08-19 (`infrastructure_sheet` task registered on the misc jobs runner;
+that job's `APIs:` line corrected). Volunteer sheets sync created +
 scheduled in Civis 2026-08-11. Shift sync decoupled to a national pull +
 Airtable bases capture created + scheduled 2026-07-23. All-volunteers sync added
 + scheduled in Civis 2026-07-02.*
@@ -318,6 +321,16 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 - Script exits non-zero if any selected target failed; per-target failures
   are isolated (one bad sheet doesn't block the rest).
+- **A target with zero volunteers used to fail to provision** (fixed in
+  ccef-connections v0.12.0, pinned here 2026-08-28). The `_data` tab holds
+  only its header, `write_worksheet` sizes the grid to exactly one row, and
+  Sheets refuses to freeze every visible row. This is the *normal* state of a
+  target registered the moment its source code is issued, before any
+  volunteer uses it — which is the whole point of registering it early. The
+  15 partner targets added 2026-08-24 hit it and took the job red 08-25..
+  08-28 while the other 158 targets updated fine, so nobody lost data but the
+  exit-1 signal was worthless for four days. If this recurs, check the pin
+  before you touch the registry.
 - Reruns are idempotent: sheets are looked up by title within their
   subfolder; `_data`/`README` are rewritten, `Volunteers` and any
   partner-added tabs/columns are left alone.
@@ -507,6 +520,19 @@ removed, per the retire contract).
   **Before registering another state:** the `sheets-controllers@` SA must be a
   writer on that spreadsheet — unlike the volunteer-export sheets, this job
   does NOT create the file, and program staff own it.
+- **Incident 2026-08-25 → 08-28:** every nightly run exited 1 because
+  `hub_host_tracker` called `SheetsWriterConnector.open_spreadsheet`, added in
+  ccef-connections **v0.8.0**, while this entrypoint was still pinned to
+  **v0.7.1**. Unlike the Asana incident below this one failed at *call* time,
+  not import, so per-task isolation held and the other three tasks landed
+  normally every night — only MI's landing page went stale (08-24 → 08-28,
+  recoverable: the next run rebuilds it from Airtable + BQ). Fixed 2026-08-28
+  by cutting ccef-connections **v0.12.0** and bumping the pin.
+  **The lesson the Asana incident did not teach:** the task was verified
+  locally at go-live and worked, because the editable local install is always
+  newer than the pin. Local success is evidence about your laptop, not about
+  the container. Check the *tag* for every method a task calls, not just for
+  the connectors it imports.
 - **Incident 2026-07-30 → 08-17:** every nightly run failed at import
   (`ImportError: cannot import name 'AsanaConnector'`) because the
   `asana_ep_kanban` task was registered 2026-07-29 without bumping the
