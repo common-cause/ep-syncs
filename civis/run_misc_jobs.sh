@@ -33,6 +33,13 @@
 # the EXTRA that was missing -- this job had never installed pyairtable).
 # The base image ships pandas, but naming it here means the job doesn't depend
 # on that staying true.
-pip install "ccef-connections[bigquery,sheets,airtable,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.12.1"
+#
+# v0.12.1 -> v0.13.0 (2026-09-03): transient-5xx retry for gspread. Diagnosed
+# on the volunteer-sheets job (a bare 503 was failing it most nights), but this
+# runner inherits the same gap through every Sheets task it carries --
+# hub_host_tracker, infrastructure_sheet and partner_source_codes all go
+# through SheetsWriterConnector/SheetsConnector. Bumped together so the two
+# jobs don't drift onto different retry behaviour.
+pip install "ccef-connections[bigquery,sheets,airtable,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.13.0"
 pip install pyyaml tzdata
 python app/run_misc_jobs.py

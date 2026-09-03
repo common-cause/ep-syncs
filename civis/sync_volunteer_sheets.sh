@@ -25,5 +25,17 @@
 # first-provisioning failure into a permanent one, and all 15 targets failed
 # again on the 2026-08-28 verification run. v0.12.1 stops write_worksheet
 # shrinking a tab to or below its frozen row count.
-pip install "ccef-connections[bigquery,sheets] @ git+https://github.com/common-cause/ccef_connections.git@v0.12.1"
+#
+# v0.12.1 -> v0.13.0 (2026-09-03): THE FIX THIS JOB ACTUALLY NEEDED. With the
+# provisioning bug gone it was still failing 5 of 8 nights, and never on quota
+# --- always `APIError: [503]: The service is currently unavailable.`
+# retry_google_operation matched 429 only, and gspread has no retry of its own,
+# so a 503 got zero connector-level retries; it fell through to this script's
+# 2-attempt loop, which waits a fixed 65s tuned for a quota window and then
+# gives up. At ~700 Sheets/Drive calls per run over 173 targets, a
+# fraction-of-a-percent 503 rate reliably kills one or two targets a night.
+# v0.13.0 retries transient 5xx for gspread specifically (500/502/503/504, not
+# 501), leaving the api_core path alone because BigQuery DML shares that
+# decorator. This script's 65s loop is now a genuine last resort.
+pip install "ccef-connections[bigquery,sheets] @ git+https://github.com/common-cause/ccef_connections.git@v0.13.0"
 python app/sync_volunteer_sheets.py
