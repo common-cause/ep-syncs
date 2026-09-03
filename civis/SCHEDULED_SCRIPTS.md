@@ -260,11 +260,11 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 - **Source script:** `civis/sync_volunteer_sheets.sh`
 - **Runs:** `app/sync_volunteer_sheets.py`
-- **Type:** Individual (Daily at 7:30 AM ET — after the all-volunteers sync
+- **Type:** Individual (Daily at 8:15 AM ET — after the all-volunteers sync
   lands at 6:30)
 - **Civis job name:** EP Volunteer Sheets Sync (Civis job id 365009753,
   created 2026-08-11)
-- **Schedule:** Daily at 7:30 AM ET (Civis Container Script; moved from 7:00 on 2026-09-03 — see the collision note below)
+- **Schedule:** Daily at 8:15 AM ET (Civis Container Script; 7:00 → 7:30 → 8:15 on 2026-09-03 — see the collision note below)
 - **APIs:** BigQuery (read only), Google Sheets + Drive (write; 60
   requests/min/user quota — per-call 429s are retried with backoff)
 - **Description:** For each enabled row in
@@ -285,7 +285,7 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - Script + entrypoint in the repo; verified end-to-end via local runs:
   all 51 state sheets + the ACLUM partner prototype created and populated;
   rerun idempotency and partner-edit preservation tested.
-- **Live in Civis** (2026-08-11): scheduled daily at 7:30 AM ET. Confirm
+- **Live in Civis** (2026-08-11): scheduled daily at 8:15 AM ET. Confirm
   failure notifications are enabled on the job (standing lesson — the shift
   job silently exited 1 for ~3 weeks before notifications were added).
 
@@ -312,18 +312,80 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 - Run after the all-volunteers sync (6:30 AM ET) so sheets reflect the
   morning's PTV snapshot.
-- **Moved 7:00 → 7:30 AM ET on 2026-09-03, because of a collision the
-  Airtable backfill created.** Registering 44 more bases took
-  `sync_airtable_bases.sh` from ~2 minutes to ~25 (6:46 → 7:11 ET), and its
-  final step regenerates the `ep_2026_cleaned` union views this job reads.
-  At 7:00 this job started mid-regeneration: individual views are replaced
-  atomically but the SET is not, so it could read a half-updated layer.
-  Nothing else is scheduled at 7:30 (checked fleet-wide). **Re-check this
-  whenever the Airtable base count grows again** — the two jobs will collide
-  a second time at ~50 minutes of capture runtime.
+- **Moved 7:00 → 7:30 → 8:15 AM ET on 2026-09-03.** First to clear a collision
+  the Airtable backfill created, then again to leave deliberate room for
+  growth. Registering 44 more bases took `sync_airtable_bases.sh` from ~2
+  minutes to ~25 (6:46 → 7:11 ET), and its final step regenerates the
+  `ep_2026_cleaned` union views this job reads. At 7:00 this job was starting
+  mid-regeneration: individual views are replaced atomically but the SET is
+  not, so it could read a half-updated layer. 7:30 fixed that with no margin;
+  8:15 gives the capture **~1h30m of runway against a 25-minute job**, sized
+  for the general-election push where the base count is expected to
+  proliferate. Nothing else is scheduled at 8:15 (checked fleet-wide).
 - Full run over 173 targets makes ~1,500 Sheets/Drive API calls and takes
   **35–66 minutes** (measured 2026-08-28..09-03, not the 20–30 this line used
   to claim). That's fine daily; don't schedule it more often than hourly.
+
+##### The morning chain, measured (2026-09-03) — read this before re-timing anything
+
+| job | fires | observed | idle after |
+|---|---|---|---|
+| Shifted Volunteers | 6:00 | ~6 min | 24 min |
+| All Volunteers | 6:30 | ~4 min | 12 min |
+| Sync Airtable Bases | 6:45 | ~25 min | 64 min |
+| Volunteer Sheets | 8:15 | 35–66 min | — |
+
+Ordering constraints, so a future re-time doesn't break one silently:
+- Airtable capture must follow the **6:00** shift sync, whose Airtable
+  upserts it captures the same morning.
+- Its view-regeneration step reads `ptv_raw_2026.v_users_current` for
+  `shifted_volunteers.in_ptv`, so it also wants the **6:30** all-volunteers
+  sync finished. Running earlier is not an error — `in_ptv` just reflects
+  yesterday's roster.
+- This job reads `ep_2026_cleaned.volunteers`, which includes the Airtable
+  self-add branch, so it must follow the capture's regeneration. **That
+  ordering is the one that actually matters.**
+
+##### Resource ceilings — three of five jobs were CPU-throttled
+
+Measured peaks against request, 2026-09-03. Civis' defaults are far too low
+and every job here was sized by habit rather than evidence:
+
+| job | CPU peak / request | memory peak / limit |
+|---|---|---|
+| Shifted Volunteers | **258 / 256m (101%)** | 483 / 1024MB |
+| All Volunteers | **259 / 256m (101%)** | 502 / 1024MB |
+| Sync Airtable Bases | 182 / 250m (73%) | 512 / 1000MB |
+| Volunteer Sheets | **260 / 250m (104%)** | **784 / 1000MB (78%)** |
+| Misc jobs runner | **201 / 250m (80%)** | 575 / 1000MB |
+
+Raised 2026-09-03 to **cpu=1024m memory=2048MB** on Sync Airtable Bases and
+Volunteer Sheets — the two jobs in the collision. Some of the Airtable job's
+25 minutes was throttling, not work, so the runway above is a conservative
+estimate.
+
+**The volunteer-sheets memory number is the one to watch.** It was at 78% of
+1000MB, and the driver is the **all-time roster** loaded into pandas (63,535
+rows on 2026-09-03), which grows with volunteer signups regardless of how many
+sheets are registered. That would have OOM-killed mid-run — worse than a fast
+failure, because a killed container leaves partner sheets half-refreshed.
+2048MB buys roughly a doubling of the roster.
+
+**Still on Civis defaults and still throttled** (not changed, since they were
+outside the collision): Shifted Volunteers, All Volunteers, and the misc jobs
+runner. Both PTV jobs are pinned at ~100% CPU, so their 6- and 4-minute
+runtimes are floors imposed by throttling.
+
+**Where this stops scaling.** Both growth-path jobs are single-threaded with a
+fixed per-item cost — ~16s per Airtable table, ~20s per sheet target. The
+schedule and resource headroom above absorb roughly one doubling. Past that,
+the fix is structural (parallelism, or incremental capture that skips
+unchanged bases), not another schedule shuffle.
+
+**Image tag drift, noted not fixed:** this job, Shifted Volunteers and All
+Volunteers run `datascience-python:latest`; Sync Airtable Bases and the misc
+runner are pinned to `8.5.0`. An unpinned image on a production job can change
+under you.
 - Adding a sheet = inserting an enabled registry row (see
   `bq/volunteer_sheet_targets.sql`); the job picks it up next run. No
   Civis-side or repo-side change needed.
