@@ -132,18 +132,53 @@ this doc when a job is created, renamed, rescheduled, or retired.
   confirmed figures went into a funder report this week, so this is the second
   MA data-completeness problem found in a week and the only one still open.
   Get the list with the monitoring query above (`skipped_keys` carries the
-  emails) and route it to the MA lead.
-  13 of the affected volunteers are still in
-  the incoming sync set, so they are skipped on every run.
-  **Do not script a delete-and-keep merge.** 14 of the 15 groups
-  differ on `Field Reports` and/or `Checklist Submissions` — both
-  records carry *different* linked submissions from real EP work, so
-  deleting either side orphans field reports. Merging means unioning
-  the link arrays into the survivor, which is native in the Airtable
-  UI and belongs to whoever owns those reports. Route the list from
-  the query above to the MI/NE/PA leads. Low urgency: none of the 13
-  have upcoming shifts. The pattern is structural and will recur as
-  more states come online.
+  emails).
+
+  **THE "DO NOT SCRIPT IT" RULE WAS WRONG, and measuring it is what showed
+  that.** The 2026-08-19 note said 14 of 15 groups "differ on Field Reports
+  and/or Checklist Submissions — both records carry different linked
+  submissions." Now that these bases are captured, the raw tables answer it
+  directly, and *differ* turned out to mean "one side has links and the other
+  doesn't", which is the SAFE case, not the dangerous one. Measured
+  2026-09-03 over `{ma,mi,ne,pa,ri}_field_report__shifted_volunteers`:
+
+  | state | groups | surplus records | safe (≤1 linked) | contested (>1 linked) |
+  |---|---|---|---|---|
+  | MA | 44 | 70 | 44 | 0 |
+  | MI | 9 | 11 | 8 | **1** |
+  | NE | 3 | 4 | 3 | 0 |
+  | PA | 3 | 3 | 3 | 0 |
+  | RI | 1 | 2 | 1 | 0 |
+  | **total** | **60** | **90** | **59** | **1** |
+
+  **59 of 60 groups have linked submissions on at most ONE record**, so there
+  is nothing to union and nothing to orphan: keep the linked record (or, where
+  none is linked, the oldest) and delete the rest. Exactly **one** MI group is
+  a genuine merge — three records, two of which each carry a field report
+  (`recNvnM75b0jjPShp` 1 report + 1 checklist, `recGqUvF3toa6qAzC` 1 report,
+  `recIW1DnxO7ytaQtm` empty).
+
+  Resolution path:
+  1. **Manifest (ep-syncs, read-only).** Emit keep/delete record ids per state
+     from the raw tables, contested groups excluded. No writes.
+  2. **Execution (ep-airtable-utilities).** Airtable deletes belong to the
+     project that owns Airtable writes, not here. Dry-run by default; refuse
+     any group with >1 linked record; refuse to delete a record carrying ANY
+     link; cap deletions per run; log every id.
+  3. **The one contested MI group** — union the link arrays onto one survivor
+     in the Airtable UI, then delete the others. This is what the original
+     note prescribed for all 15; it is right for exactly this one.
+  4. **Verify** on the next sync: `skipped_dupe_exact` should fall to 0 for
+     those states. The detection surface already exists.
+
+  **Prevention matters more than the cleanup.** MA generated 44 groups in two
+  weeks, and 57 of the duplicate-involved records were created on 2026-09-01
+  alone — spread ~1/minute across the whole day, so **organic self-add
+  traffic, not a bad import**. The emergency self-add form creates a record
+  unconditionally, so every returning volunteer who uses it on a high-volume
+  day makes a second record. Without a form-level dedupe (ep-airtable-
+  utilities' domain), MA regenerates this backlog on every big signup day and
+  step 1-3 is a treadmill.
 - **`Unique ID Column` is never read or written.** No PTV user id is
   in the payload at all (`DEFAULT_FIELD_MAP` carries only
   email/first/last/phone/county/state, and the source view exposes
@@ -427,12 +462,15 @@ cannot:
 |---|---|---|---|
 | All Volunteers | 2m43s @ 256m/latest | **1m55s** @ 1024m/8.5.0 | run 858691405 |
 | Shifted Volunteers | 4m13s @ 256m/latest | **2m45s** @ 1024m/8.5.0 | run 858691739 |
-| Volunteer Sheets | 36m @ 250m/latest | see below | run 858692086 |
+| Volunteer Sheets | 36m @ 250m/latest | **34m15s** @ 1024m/8.5.0 | run 858692086 |
 
 The two PTV jobs came in ~35% faster, which is the CPU raise showing up
-(they were the two pinned at ~100% of a 256m request). The sheets job is
-mostly waiting on the Sheets API rather than on CPU, so expect little
-improvement there — its limit is the 60 write-requests/min quota, not compute.
+(they were the two pinned at ~100% of a 256m request). The sheets job barely
+moved, exactly as expected — it is waiting on the Sheets API, not on compute.
+Its verified run used **150.9 of 1024 millicores and 763 of 3072 MB**, so CPU
+was never its constraint and the 60 write-requests/min quota still is. Do not
+"fix" that job's runtime with more CPU; the levers are the three structural
+options above.
 - Adding a sheet = inserting an enabled registry row (see
   `bq/volunteer_sheet_targets.sql`); the job picks it up next run. No
   Civis-side or repo-side change needed.
