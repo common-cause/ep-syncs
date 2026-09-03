@@ -1,7 +1,7 @@
 # Volunteer Sheets Sync — Spec
 
 *Drafted 2026-07-08. Status: **LIVE in Civis** (2026-08-11) — "EP Volunteer
-Sheets Sync", daily 7:00 AM ET. Built and verified locally 2026-07-08 (all
+Sheets Sync", daily 7:30 AM ET (moved from 7:00 on 2026-09-03). Built and verified locally 2026-07-08 (all
 51 state sheets + ACLUM partner prototype live in Drive); partner-code
 curation pass (§8) landed 2026-07-09.*
 
@@ -152,7 +152,7 @@ so confirm identity before anyone is given the link.
 3. Per-target try/except failure isolation; exit 1 if any target failed.
 4. `--targets NE,PA,aclum` CLI override for ops/testing.
 
-Civis: GitHub-backed container job, daily **7:00 AM ET** (after all-volunteers
+Civis: GitHub-backed container job, daily **7:30 AM ET** (after all-volunteers
 lands at 6:30). Credentials: `BIGQUERY_CREDENTIALS_PASSWORD` +
 `GOOGLE_SHEETS_CREDENTIALS_PASSWORD`. Full details + status in
 `civis/SCHEDULED_SCRIPTS.md`. Install extra: `ccef-connections[bigquery,sheets]`

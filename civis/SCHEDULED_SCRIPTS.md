@@ -260,11 +260,11 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 - **Source script:** `civis/sync_volunteer_sheets.sh`
 - **Runs:** `app/sync_volunteer_sheets.py`
-- **Type:** Individual (Daily at 7:00 AM ET — after the all-volunteers sync
+- **Type:** Individual (Daily at 7:30 AM ET — after the all-volunteers sync
   lands at 6:30)
 - **Civis job name:** EP Volunteer Sheets Sync (Civis job id 365009753,
   created 2026-08-11)
-- **Schedule:** Daily at 7:00 AM ET (Civis Container Script)
+- **Schedule:** Daily at 7:30 AM ET (Civis Container Script; moved from 7:00 on 2026-09-03 — see the collision note below)
 - **APIs:** BigQuery (read only), Google Sheets + Drive (write; 60
   requests/min/user quota — per-call 429s are retried with backoff)
 - **Description:** For each enabled row in
@@ -285,7 +285,7 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - Script + entrypoint in the repo; verified end-to-end via local runs:
   all 51 state sheets + the ACLUM partner prototype created and populated;
   rerun idempotency and partner-edit preservation tested.
-- **Live in Civis** (2026-08-11): scheduled daily at 7:00 AM ET. Confirm
+- **Live in Civis** (2026-08-11): scheduled daily at 7:30 AM ET. Confirm
   failure notifications are enabled on the job (standing lesson — the shift
   job silently exited 1 for ~3 weeks before notifications were added).
 
@@ -311,10 +311,19 @@ To pause a sync without removing it, set `enabled = FALSE`.
 #### Scheduling notes
 
 - Run after the all-volunteers sync (6:30 AM ET) so sheets reflect the
-  morning's PTV snapshot; 7:00 AM ET leaves ~30 min of slack.
-- Full run over ~130 targets makes ~1,500 Sheets/Drive API calls; with the
-  60/min write quota a run can take 20–30 minutes. That's fine daily; don't
-  schedule it more often than hourly.
+  morning's PTV snapshot.
+- **Moved 7:00 → 7:30 AM ET on 2026-09-03, because of a collision the
+  Airtable backfill created.** Registering 44 more bases took
+  `sync_airtable_bases.sh` from ~2 minutes to ~25 (6:46 → 7:11 ET), and its
+  final step regenerates the `ep_2026_cleaned` union views this job reads.
+  At 7:00 this job started mid-regeneration: individual views are replaced
+  atomically but the SET is not, so it could read a half-updated layer.
+  Nothing else is scheduled at 7:30 (checked fleet-wide). **Re-check this
+  whenever the Airtable base count grows again** — the two jobs will collide
+  a second time at ~50 minutes of capture runtime.
+- Full run over 173 targets makes ~1,500 Sheets/Drive API calls and takes
+  **35–66 minutes** (measured 2026-08-28..09-03, not the 20–30 this line used
+  to claim). That's fine daily; don't schedule it more often than hourly.
 - Adding a sheet = inserting an enabled registry row (see
   `bq/volunteer_sheet_targets.sql`); the job picks it up next run. No
   Civis-side or repo-side change needed.
@@ -323,6 +332,32 @@ To pause a sync without removing it, set `enabled = FALSE`.
 
 - Script exits non-zero if any selected target failed; per-target failures
   are isolated (one bad sheet doesn't block the rest).
+- **THE DOMINANT FAILURE MODE IS A TRANSIENT 503, NOT QUOTA — and the retry
+  path is built for quota.** Diagnosed 2026-09-03: 5 of the last 8 runs
+  failed, and the error is
+  `APIError: [503]: The service is currently unavailable.`, not a 429.
+  Why it bites:
+  - `retry_google_operation` in ccef-connections retries **429 only**
+    (`_is_google_rate_limit`), and its own docstring notes gspread has no
+    retry of its own. So a 503 gets **zero** connector-level retries.
+  - It falls through to this script's 2-attempt loop, which waits a fixed
+    `QUOTA_COOLDOWN_SECONDS = 65` — a quota-window wait applied to a
+    transient server error that typically clears in seconds — and then
+    gives up, failing the target and the whole job.
+  - 173 targets × ~4 calls is ~700 calls/run, so even a fraction-of-a-percent
+    503 rate reliably produces 1–2 failed targets a night. That matches the
+    observed pattern exactly (`failed=['promotethevote','NV']` on 09-03,
+    `NH` on 08-28).
+  Confirmed transient: re-running just those two targets locally the same
+  morning exited **0**, with NV succeeding on the cooldown retry. **No
+  partner data was ever wrong** — the sheet just kept yesterday's rows for a
+  day. The cost is the alarm: a red job every other morning means a real
+  failure looks identical. Same lesson as the two pin outages.
+  **The fix belongs in ccef-connections**, not here: `_is_google_rate_limit`
+  should also cover transient 5xx (500/502/503/504) so the existing
+  exponential backoff handles them, since every Sheets consumer in the fleet
+  inherits this gap. Then this script's 65s loop goes back to being a
+  genuine last resort.
 - **A target with zero volunteers used to fail to provision** (fixed in
   ccef-connections **v0.12.1**, pinned here 2026-08-28). The `_data` tab holds
   only its header, `write_worksheet` sizes the grid to exactly one row, and

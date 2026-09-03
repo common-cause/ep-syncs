@@ -225,3 +225,54 @@ WHEN NOT MATCHED THEN INSERT
 VALUES
   (S.name, S.state, S.base_id, S.base_type, S.bq_table_prefix, S.exclude_tables,
    NULL, TRUE, 'ep-syncs backfill 2026-09-02', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), S.notes);
+
+-- ---------------------------------------------------------------------------
+-- FL field report, registered 2026-09-03 on Rob's instruction.
+--
+-- The last base from ep-dashboards' 2026-09-02 note still uncaptured. They
+-- excluded it ("CCFL sent us the export directly and we've loaded it through
+-- our own state-submission path, so it's covered either way -- though
+-- registering it would make it repeatable rather than a one-off"), and the
+-- same-day quiz sweep did not reach it because it is a field-report base.
+--
+-- Registered precisely BECAUSE it was built off-process: it has no spec in
+-- ep-airtable-utilities, so nothing would ever register it automatically, and
+-- it goes dark again the moment ep-dashboards stops hand-loading the export.
+--
+-- NON-STANDARD TABLE NAMES, and this is the MA lesson repeating. The base has
+-- 'Field Reports' (not 'Incident Reports') and 'Volunteers' (not 'Shifted
+-- Volunteers'). Both are empty today so nothing is lost by registering now;
+-- 'Polling Places' (177) and 'Checklist Submissions' (18) carry stock names
+-- and map straight through. `field_reports` is added to the incident_reports
+-- entity's table_keys in airtable_views.py in this same commit, so CCFL
+-- filing its first report lands in the cleaned layer rather than vanishing
+-- into raw. `Volunteers` is deliberately NOT mapped to shifted_volunteers:
+-- 7 fields against the stock 12, and empty, so the mapping is unverifiable --
+-- guessing it is exactly what the triage runbook says to escalate.
+-- ---------------------------------------------------------------------------
+
+MERGE `proj-tmc-mem-com.ep.airtable_sync_sources` T
+USING (
+  SELECT
+    'FL Field Report'   AS name,
+    'FL'                AS state,
+    'appMFo7pcyrJSRI6t' AS base_id,
+    'field_report'      AS base_type,
+    'fl_field_report'   AS bq_table_prefix,
+    'FL 2026 (March). Spun up outside the ep-airtable-utilities spec system, so nothing registers it automatically. Non-stock table names: "Field Reports" (mapped via the incident_reports table_keys) and "Volunteers" (NOT mapped -- 7 fields vs the stock 12 and empty, so the shifted_volunteers mapping is unverified; revisit when CCFL puts rows in it). At registration: 177 polling places, 18 checklist submissions, 0 field reports, 0 volunteers.' AS notes
+) S
+ON T.base_id = S.base_id
+WHEN MATCHED THEN UPDATE SET
+  name            = S.name,
+  state           = S.state,
+  base_type       = S.base_type,
+  bq_table_prefix = S.bq_table_prefix,
+  enabled         = TRUE,
+  updated_at      = CURRENT_TIMESTAMP(),
+  notes           = S.notes
+WHEN NOT MATCHED THEN INSERT
+  (name, state, base_id, base_type, bq_table_prefix, exclude_tables,
+   canonical_overrides, enabled, registered_by, registered_at, updated_at, notes)
+VALUES
+  (S.name, S.state, S.base_id, S.base_type, S.bq_table_prefix, NULL,
+   NULL, TRUE, 'ep-syncs 2026-09-03', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), S.notes);

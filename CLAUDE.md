@@ -198,7 +198,7 @@ python misc_jobs/hub_host_tracker.py --targets MI --install-scaffolding   # + re
 All read credentials from `.env` locally; in Civis they run as scheduled
 GitHub-backed container jobs (shift sync daily 6:00 AM ET, all-volunteers
 daily 6:30 AM ET, Airtable capture daily 6:45 AM ET,
-volunteer sheets daily 7:00 AM ET,
+volunteer sheets daily 7:30 AM ET,
 misc jobs nightly 3:00 AM ET, self-selecting tasks per
 `misc_jobs_schedule.yaml`)
 — see `civis/SCHEDULED_SCRIPTS.md` before touching schedules.

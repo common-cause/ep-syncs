@@ -8,6 +8,22 @@ CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.polling_places`
 OPTIONS(description="All polling places loaded into the state field-report bases (CC-loaded reference data plus any field additions). One row per Airtable record. state comes from the registry.")
 AS
 SELECT
+  'FL' AS state,
+  'fl_field_report' AS base_key,
+  'appMFo7pcyrJSRI6t' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  t.`polling_place` AS name,
+  t.`pp_name` AS pp_name,
+  t.`address` AS address,
+  t.`city` AS city,
+  t.`zip` AS zip_code,
+  t.`county` AS county,
+  t.`location_notes` AS notes
+FROM `proj-tmc-mem-com.ep_2026_raw.fl_field_report__polling_places` t
+UNION ALL
+SELECT
   'MA' AS state,
   'ma_field_report' AS base_key,
   'appqtgaUrIVwIpIsV' AS base_id,

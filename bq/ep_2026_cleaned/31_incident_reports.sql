@@ -8,6 +8,32 @@ CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.incident_reports`
 OPTIONS(description="All 2026 EP field incident reports across state field-report bases. One row per Airtable record. Canonical columns cover the reporter, category, location, and narrative; state-specific fields (incl. subcategories and any voter-identifying fields, which are deliberately NOT canonicalized) stay in the ep_2026_raw typed tables / airtable_records_latest JSON. volunteer_email normalized via norm_email; state comes from the registry.")
 AS
 SELECT
+  'FL' AS state,
+  'fl_field_report' AS base_key,
+  'appMFo7pcyrJSRI6t' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  t.`report_id` AS report_id,
+  t.`volunteer_name` AS volunteer_name,
+  t.`volunteer_first_name` AS volunteer_first_name,
+  t.`volunteer_last_name` AS volunteer_last_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`volunteer_email`) AS volunteer_email,
+  t.`volunteer_email` AS volunteer_email_raw,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(t.`volunteer_s_phone_number`) AS volunteer_phone,
+  t.`source` AS source,
+  t.`caller` AS caller,
+  t.`voting_issue_category` AS category,
+  t.`voting_method` AS voting_method,
+  t.`polling_place_name_from_polling_place` AS polling_place_name,
+  t.`county_from_polling_place` AS county,
+  t.`notes_comments` AS description,
+  SAFE_CAST(CAST(t.`requires_escalation` AS STRING) AS BOOL) AS requires_escalation,
+  SAFE_CAST(CAST(t.`escalation_resolved` AS STRING) AS BOOL) AS escalation_resolved,
+  t.`escalation_notes` AS escalation_notes
+FROM `proj-tmc-mem-com.ep_2026_raw.fl_field_report__field_reports` t
+UNION ALL
+SELECT
   'MA' AS state,
   'ma_field_report' AS base_key,
   'appqtgaUrIVwIpIsV' AS base_id,

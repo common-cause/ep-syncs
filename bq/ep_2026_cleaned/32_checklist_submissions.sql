@@ -8,6 +8,24 @@ CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.checklist_submissions`
 OPTIONS(description="All 2026 EP polling-place checklist submissions across state field-report bases (stock 'Checklist Submissions' tables plus bespoke variants: UT's 'Poll Monitoring Checklist' and MA's 'Polling Place Checklist'). A state naming its checklist table something new lands in ep_2026_raw but NOT here until its key is added to this entity's table_keys. One row per Airtable record. Volunteer identity resolves from direct fields where the base has them, else via the volunteer record link into that base's Shifted Volunteers table. Per-question answers are NEVER canonicalized across states -- read them from the ep_2026_raw typed tables / airtable_records_latest JSON. state comes from the registry.")
 AS
 SELECT
+  'FL' AS state,
+  'fl_field_report' AS base_key,
+  'appMFo7pcyrJSRI6t' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  CAST(NULL AS STRING) AS volunteer_email,
+  CAST(NULL AS STRING) AS volunteer_email_raw,
+  CAST(NULL AS STRING) AS volunteer_name,
+  CAST(NULL AS STRING) AS volunteer_phone,
+  pp.`polling_place` AS polling_place,
+  t.`county` AS county,
+  t.`polling_place_checklist` AS checklist_name
+FROM `proj-tmc-mem-com.ep_2026_raw.fl_field_report__checklist_submissions` t
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.fl_field_report__polling_places` pp
+  ON pp._airtable_record_id = JSON_VALUE(t.`polling_places`, '$[0]')
+UNION ALL
+SELECT
   'MA' AS state,
   'ma_field_report' AS base_key,
   'appqtgaUrIVwIpIsV' AS base_id,

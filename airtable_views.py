@@ -140,7 +140,10 @@ ENTITIES: List[Entity] = [
     ),
     Entity(
         view="incident_reports",
-        table_keys=["incident_reports"],
+        # 'field_reports' is FL's name for the same table. Same trap as MA's
+        # checklist tab: a state renaming it lands the rows in ep_2026_raw and
+        # in NO cleaned view, with nothing failing.
+        table_keys=["incident_reports", "field_reports"],
         base_types=["field_report"],
         description=(
             "All 2026 EP field incident reports across state field-report "
