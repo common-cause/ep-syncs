@@ -359,28 +359,54 @@ and every job here was sized by habit rather than evidence:
 | Volunteer Sheets | **260 / 250m (104%)** | **784 / 1000MB (78%)** |
 | Misc jobs runner | **201 / 250m (80%)** | 575 / 1000MB |
 
-Raised 2026-09-03 to **cpu=1024m memory=2048MB** on Sync Airtable Bases and
-Volunteer Sheets — the two jobs in the collision. Some of the Airtable job's
-25 minutes was throttling, not work, so the runway above is a conservative
-estimate.
+**All five were resized on 2026-09-03** to the shape below:
 
-**The volunteer-sheets memory number is the one to watch.** It was at 78% of
-1000MB, and the driver is the **all-time roster** loaded into pandas (63,535
-rows on 2026-09-03), which grows with volunteer signups regardless of how many
-sheets are registered. That would have OOM-killed mid-run — worse than a fast
-failure, because a killed container leaves partner sheets half-refreshed.
-2048MB buys roughly a doubling of the roster.
+| job | CPU | memory |
+|---|---|---|
+| Shifted Volunteers | 1024m | 2048MB |
+| All Volunteers | 1024m | 2048MB |
+| Sync Airtable Bases | 1024m | 2048MB |
+| Volunteer Sheets | 1024m | **3072MB** |
+| Misc jobs runner | 1024m | 2048MB |
 
-**Still on Civis defaults and still throttled** (not changed, since they were
-outside the collision): Shifted Volunteers, All Volunteers, and the misc jobs
-runner. Both PTV jobs are pinned at ~100% CPU, so their 6- and 4-minute
-runtimes are floors imposed by throttling.
+**Why 1024m and not more: these jobs are single-threaded Python.** One
+interpreter thread cannot exceed ~1000 millicores, so 1024m is the ceiling
+that actually buys anything — every job above was measurably capped below it,
+and going higher would allocate cores nothing can use. (pyarrow and the BQ
+client do some work in threads, so the true peak can sit slightly above one
+core; 1024m is the right standard, not a hard physical limit.) The corollary
+matters for capacity planning: **CPU is no longer the constraint, so runtime
+now scales purely with item count** — see "where this stops scaling" below.
+
+Memory is sized at roughly 4x observed peak, because every driver here grows:
+the PTV jobs pull a 50-state snapshot, the Airtable job's per-table dataframes
+grow with the biggest table, and the misc runner now carries five tasks.
+
+**Volunteer Sheets gets 3072MB, not 2048, and it is the one to watch.** It was
+at 78% of a 1000MB limit, and the driver is the **all-time roster** loaded into
+pandas — 63,535 rows on 2026-09-03 — which grows with volunteer signups
+regardless of how many sheets are registered. It was heading for an OOM kill
+mid-run, which is worse than a fast failure: a killed container leaves partner
+sheets half-refreshed. This is the only job here whose memory is driven by
+something the registry does not control, so re-check its peak as recruitment
+ramps rather than assuming the headroom holds.
 
 **Where this stops scaling.** Both growth-path jobs are single-threaded with a
-fixed per-item cost — ~16s per Airtable table, ~20s per sheet target. The
-schedule and resource headroom above absorb roughly one doubling. Past that,
-the fix is structural (parallelism, or incremental capture that skips
-unchanged bases), not another schedule shuffle.
+fixed per-item cost — ~16s per Airtable table, ~20s per sheet target — and
+with CPU no longer throttling them, runtime is now a straight line in item
+count. The schedule and resource headroom above absorb roughly one doubling
+(Airtable capture to ~50 min against 1h30m of runway; sheets to ~2h against a
+workday). Past that the fix is structural and there is no third schedule
+shuffle available:
+- **Incremental capture** — skip a base whose records haven't changed. Most of
+  the 48 quiz bases are dormant archives being re-read in full every night.
+  Highest leverage by far, and cheapest to build.
+- **Parallelism** — a worker pool over bases/targets. Effective but it needs
+  real care: the Sheets write quota is 60/min/user and the whole fleet shares
+  one service account, so unbounded concurrency trades a slow job for a
+  throttled one.
+- **Splitting the sheets job** by target class (states vs partner codes) into
+  two Civis jobs, which buys wall-clock without touching the code.
 
 **Image tag drift, noted not fixed:** this job, Shifted Volunteers and All
 Volunteers run `datascience-python:latest`; Sync Airtable Bases and the misc
