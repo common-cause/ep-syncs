@@ -123,8 +123,17 @@ this doc when a job is created, renamed, rescheduled, or retired.
 
 #### Open follow-ups
 
-- **Resolve destination duplicates (15 groups as of 2026-08-19:
-  MI 9, NE 3, PA 3).** 13 of the affected volunteers are still in
+- **Resolve destination duplicates — now 52 records across 5 states, and MA
+  is 38 of them.** From `ep.shift_sync_log` for 2026-09-03:
+  **MA 38** (+1 case-variant), MI 9, NE 2, PA 2, RI 1. The 2026-08-19 count
+  of 15 (MI 9, NE 3, PA 3) predates the MA and RI bases existing at all.
+  Those 38 MA volunteers are skipped on **every** run and have been going
+  stale daily since that base went live — and MA is a primary state whose
+  confirmed figures went into a funder report this week, so this is the second
+  MA data-completeness problem found in a week and the only one still open.
+  Get the list with the monitoring query above (`skipped_keys` carries the
+  emails) and route it to the MA lead.
+  13 of the affected volunteers are still in
   the incoming sync set, so they are skipped on every run.
   **Do not script a delete-and-keep merge.** 14 of the 15 groups
   differ on `Field Reports` and/or `Checklist Submissions` — both
@@ -408,10 +417,22 @@ shuffle available:
 - **Splitting the sheets job** by target class (states vs partner codes) into
   two Civis jobs, which buys wall-clock without touching the code.
 
-**Image tag drift, noted not fixed:** this job, Shifted Volunteers and All
-Volunteers run `datascience-python:latest`; Sync Airtable Bases and the misc
-runner are pinned to `8.5.0`. An unpinned image on a production job can change
-under you.
+**Image tags: all five are now pinned to `8.5.0`** (2026-09-03). Three ran
+`datascience-python:latest`, which can change under you without a commit
+anywhere. Pinned **one at a time, each verified by its own run** rather than as
+a batch, because an image swap can break an install in a way a resource change
+cannot:
+
+| job | before | after | verified |
+|---|---|---|---|
+| All Volunteers | 2m43s @ 256m/latest | **1m55s** @ 1024m/8.5.0 | run 858691405 |
+| Shifted Volunteers | 4m13s @ 256m/latest | **2m45s** @ 1024m/8.5.0 | run 858691739 |
+| Volunteer Sheets | 36m @ 250m/latest | see below | run 858692086 |
+
+The two PTV jobs came in ~35% faster, which is the CPU raise showing up
+(they were the two pinned at ~100% of a 256m request). The sheets job is
+mostly waiting on the Sheets API rather than on CPU, so expect little
+improvement there — its limit is the 60 write-requests/min quota, not compute.
 - Adding a sheet = inserting an enabled registry row (see
   `bq/volunteer_sheet_targets.sql`); the job picks it up next run. No
   Civis-side or repo-side change needed.
