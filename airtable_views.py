@@ -96,6 +96,10 @@ class Entity:
     base_types: List[str]
     description: str
     columns: List[Col]
+    # Optional per-branch WHERE, applied to every branch of the union. Exists
+    # because cycle is NOT a property of a base: MA/MD/MN/MO reuse one standing
+    # quiz base across cycles, so a 2026 view has to select rows, not bases.
+    row_filter: Optional[str] = None
 
 
 _SV_LINK = dict(via=["volunteer", "shifted_volunteers", "shifted_volunteers_copy"],
@@ -110,12 +114,17 @@ ENTITIES: List[Entity] = [
         description=(
             "All 2026 EP quiz responses across state quiz bases (registry: "
             "ep.airtable_sync_sources, base_type='quiz'). One row per Airtable "
-            "record. score/score_max derive from the per-base grader column "
+            "record. FILTERED to created_at >= 2026-01-01: many states reuse ONE "
+            "standing quiz base across cycles (MA/MD/MN/MO) and the archive-only "
+            "bases are captured too, so ~3.1k pre-2026 responses live in "
+            "ep_2026_raw. Read those from the raw tables, not from here. "
+            "score/score_max derive from the per-base grader column "
             "'correct_answers_out_of_{n}'; passed = score = score_max. "
             "Per-question answers stay in the ep_2026_raw typed tables / "
             "airtable_records_latest JSON. email normalized via norm_email. "
             "state comes from the registry, never from record fields."
         ),
+        row_filter="t._airtable_created_time >= TIMESTAMP('2026-01-01')",
         columns=[
             Col("email", "STRING", sources=["email"], transform="norm_email"),
             Col("email_raw", "STRING", sources=["email"]),
@@ -168,12 +177,16 @@ ENTITIES: List[Entity] = [
     ),
     Entity(
         view="checklist_submissions",
-        table_keys=["checklist_submissions", "poll_monitoring_checklist"],
+        table_keys=["checklist_submissions", "poll_monitoring_checklist",
+                    "polling_place_checklist"],
         base_types=["field_report"],
         description=(
             "All 2026 EP polling-place checklist submissions across state "
             "field-report bases (stock 'Checklist Submissions' tables plus "
-            "bespoke variants like UT's 'Poll Monitoring Checklist'). One row "
+            "bespoke variants: UT's 'Poll Monitoring Checklist' and MA's "
+            "'Polling Place Checklist'). A state naming its checklist table "
+            "something new lands in ep_2026_raw but NOT here until its key is "
+            "added to this entity's table_keys. One row "
             "per Airtable record. Volunteer identity resolves from direct "
             "fields where the base has them, else via the volunteer record "
             "link into that base's Shifted Volunteers table. Per-question "
@@ -451,6 +464,8 @@ def _branch_sql(
             f"\nLEFT JOIN `{PROJECT}.{RAW_DATASET}.{target_table}` {alias}"
             f"\n  ON {alias}._airtable_record_id = JSON_VALUE(t.`{link_col}`, '$[0]')"
         )
+    if entity.row_filter:
+        sql += f"\nWHERE {entity.row_filter}"
     return sql
 
 

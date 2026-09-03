@@ -43,6 +43,7 @@ import yaml
 from dotenv import load_dotenv
 
 from misc_jobs import (
+    airtable_base_visibility,
     asana_ep_kanban,
     hub_host_tracker,
     infrastructure_sheet,
@@ -100,6 +101,16 @@ JOBS: List[MiscJob] = [
                     "only sees a code once a volunteer uses it. Reconciled by "
                     "ep_2026_cleaned.source_code_resolution.",
         run=partner_source_codes.run,
+    ),
+    MiscJob(
+        key="airtable_base_visibility",
+        description="Every Airtable base the sync-operations PAT can see -> "
+                    "ep.airtable_base_visibility. Makes a base APPEARING a "
+                    "detectable event: PAT access is granted by people who "
+                    "don't know capture is a separate step, so a grant is "
+                    "silent. Triage of what turns up is the "
+                    "airtable-base-triage dispatch task type, not this task.",
+        run=airtable_base_visibility.run,
     ),
     MiscJob(
         key="hub_host_tracker",

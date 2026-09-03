@@ -8,6 +8,25 @@ CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.shifted_volunteers`
 OPTIONS(description="All records in the state bases' 'Shifted Volunteers' tables (dual write paths: the PTV sync upsert + the emergency self-add form). One row per Airtable record. in_ptv flags whether the (state, email) exists in PTV's CURRENT roster (ptv_raw_2026.v_users_current) -- FALSE means a self-add with no PTV counterpart yet. Feeds the volunteers view's self-add branch; also useful for sync reconciliation. email/phone normalized; state comes from the registry.")
 AS
 SELECT
+  'MA' AS state,
+  'ma_field_report' AS base_key,
+  'appqtgaUrIVwIpIsV' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`first_name` AS first_name,
+  t.`last_name` AS last_name,
+  t.`full_name` AS full_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(t.`phone_number`) AS phone,
+  t.`county` AS county,
+  t.`zip` AS zip_code,
+  t.`unique_id_column` AS unique_id,
+  EXISTS(SELECT 1 FROM `proj-tmc-mem-com.ptv_raw_2026.v_users_current` u WHERE u.state = 'MA' AND u.email = `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`)) AS in_ptv
+FROM `proj-tmc-mem-com.ep_2026_raw.ma_field_report__shifted_volunteers` t
+UNION ALL
+SELECT
   'MD' AS state,
   'md_field_report' AS base_key,
   'appl4mIwgXu46SucR' AS base_id,
@@ -65,6 +84,44 @@ SELECT
 FROM `proj-tmc-mem-com.ep_2026_raw.ne_field_report__shifted_volunteers` t
 UNION ALL
 SELECT
+  'OH' AS state,
+  'oh_general_field_report' AS base_key,
+  'appElL9zBgVfQ94gP' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`first_name` AS first_name,
+  t.`last_name` AS last_name,
+  t.`full_name` AS full_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(t.`phone_number`) AS phone,
+  t.`county` AS county,
+  t.`zip` AS zip_code,
+  t.`unique_id_column` AS unique_id,
+  EXISTS(SELECT 1 FROM `proj-tmc-mem-com.ptv_raw_2026.v_users_current` u WHERE u.state = 'OH' AND u.email = `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`)) AS in_ptv
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_general_field_report__shifted_volunteers` t
+UNION ALL
+SELECT
+  'OH' AS state,
+  'oh_primary_field_report' AS base_key,
+  'appVP4TefFTHTPOH4' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`first_name` AS first_name,
+  t.`last_name` AS last_name,
+  t.`full_name` AS full_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(t.`phone_number`) AS phone,
+  t.`county` AS county,
+  t.`zip` AS zip_code,
+  t.`unique_id_column` AS unique_id,
+  EXISTS(SELECT 1 FROM `proj-tmc-mem-com.ptv_raw_2026.v_users_current` u WHERE u.state = 'OH' AND u.email = `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`)) AS in_ptv
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_primary_field_report__shifted_volunteers` t
+UNION ALL
+SELECT
   'PA' AS state,
   'pa_field_report' AS base_key,
   'app3EDk60ZEfTR79P' AS base_id,
@@ -82,6 +139,25 @@ SELECT
   t.`unique_id_column` AS unique_id,
   EXISTS(SELECT 1 FROM `proj-tmc-mem-com.ptv_raw_2026.v_users_current` u WHERE u.state = 'PA' AND u.email = `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`)) AS in_ptv
 FROM `proj-tmc-mem-com.ep_2026_raw.pa_field_report__shifted_volunteers` t
+UNION ALL
+SELECT
+  'RI' AS state,
+  'ri_field_report' AS base_key,
+  'app79YXggpoQPIpem' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`first_name` AS first_name,
+  t.`last_name` AS last_name,
+  t.`full_name` AS full_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(t.`phone_number`) AS phone,
+  t.`county` AS county,
+  t.`zip` AS zip_code,
+  t.`unique_id_column` AS unique_id,
+  EXISTS(SELECT 1 FROM `proj-tmc-mem-com.ptv_raw_2026.v_users_current` u WHERE u.state = 'RI' AND u.email = `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`)) AS in_ptv
+FROM `proj-tmc-mem-com.ep_2026_raw.ri_field_report__shifted_volunteers` t
 UNION ALL
 SELECT
   'UT' AS state,

@@ -27,14 +27,48 @@ per Airtable base), every run:
 Read-only toward Airtable. Per-base and per-table failure isolation; exit 1
 on any failure.
 
-## Scope (2026)
+## Scope
 
 Field-report bases + quiz bases provisioned by ep-airtable-utilities.
 **Not** captured: template bases (`app64MZeqXk6BuuPi`, `app00ZGvBKtveksbn`,
 `appTt4SsXD0lsBU6i`) and the OH BOE tracker (`appTQh59UzvukR6rL`) — by
-decision 2026-07-23. Seeded 2026-07-23: 14 bases (6 field-report: NE PA WI
-UT MD MI; 8 quiz: NY PA UT OR OR-dropbox OR-trusted-messenger
-MI-poll-monitor MI-rover), all PAT-verified and enabled.
+decision 2026-07-23.
+
+**58 bases enabled as of 2026-09-02** (10 field-report, 48 quiz):
+
+- *Seeded 2026-07-23* — 14 bases (6 field-report: NE PA WI UT MD MI;
+  8 quiz: NY PA UT OR OR-dropbox OR-trusted-messenger MI-poll-monitor
+  MI-rover).
+- *Backfilled 2026-09-02* — 44 bases. Four field-report bases
+  ep-dashboards found configured-but-uncaptured (MA, RI, OH general, OH
+  primary), plus **every remaining non-template quiz base the PAT can see**
+  (40), on the standing decision that quiz completion is the
+  training-progress signal and belongs in BQ whether or not a dashboard
+  reads it yet.
+
+Empty bases are registered deliberately. Between 2026-07-23 and 2026-09-02
+five live bases collected into a void because nothing registered them at
+go-live; an enabled row makes a dormant base's reuse capture automatically
+instead of depending on someone noticing. The registration step is still
+missing from ep-airtable-utilities' `setup-state-field-report` command —
+until it lands, new bases keep arriving unregistered.
+
+### Quiz bases are not per-cycle
+
+The quiz inventory does **not** map one base to one election. Two patterns
+coexist, and telling them apart matters:
+
+- *Per-cycle clones* — MI, OR, NY, PA, UT 2026. One base per election.
+- *Standing bases* — MA, MD, MN, MO reuse **one** base across cycles. The
+  MA quiz base holds responses from 2024-09 through today in the same table.
+
+So **cycle is a property of a row, not of a base.** 3,082 of the 3,557
+records added by the 2026-09-02 backfill predate 2026. They live in
+`ep_2026_raw` on purpose; `ep_2026_cleaned.quiz_responses` selects
+`created_at >= 2026-01-01` per row (see `airtable_views.py`,
+`Entity.row_filter`). That predicate also fixed a pre-existing leak — the
+registered `pa_quiz` base was already putting 9 rows of 2024 data into a
+view described as "All 2026 EP quiz responses".
 
 ## Typed-table contract (what interface views read)
 
@@ -154,3 +188,19 @@ the day's "Shifted Volunteers" capture includes them). See
   returned exactly 101; typed tables stable (replace).
 - Full run: 14/14 bases, 34 tables, 2,335 rows, exit 0. 14 of 34 tables
   empty so far (typed empty tables exist; history rows only for records).
+
+## Verification log (2026-09-02, backfill to 58 bases)
+
+- `--check-access`: 58/58 bases accessible with the sync-operations PAT.
+- Full run: 58/58 bases, **92 typed tables, 10,606 rows, exit 0**, no
+  per-base or per-table failures. 34 of 92 tables empty (registered-but-
+  dormant bases, and live bases whose optional tables nobody fills).
+- Generated views: `quiz_responses` 48 branches, `checklist_submissions`
+  10 (MA's `polling_place_checklist` now among them).
+- Cleaned-layer spot checks: MA now present in all five entity views
+  (78 incidents / 135 checklists / 552 shifted / 132 polling places /
+  335 quiz responses); RI and OH present; `quiz_responses` returns 2026
+  rows **only**, across MA MD MI MN MO NM NY OR PA — the 9 pre-existing
+  PA 2024 rows it used to leak are correctly gone.
+- Counter-check on the raw layer: the 3,082 pre-2026 quiz records are in
+  `ep_2026_raw` and reachable, they are simply not in the 2026 view.

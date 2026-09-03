@@ -8,6 +8,22 @@ CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.polling_places`
 OPTIONS(description="All polling places loaded into the state field-report bases (CC-loaded reference data plus any field additions). One row per Airtable record. state comes from the registry.")
 AS
 SELECT
+  'MA' AS state,
+  'ma_field_report' AS base_key,
+  'appqtgaUrIVwIpIsV' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  t.`polling_place` AS name,
+  t.`pp_name` AS pp_name,
+  t.`address` AS address,
+  t.`city` AS city,
+  t.`zip` AS zip_code,
+  t.`county` AS county,
+  t.`location_notes` AS notes
+FROM `proj-tmc-mem-com.ep_2026_raw.ma_field_report__polling_places` t
+UNION ALL
+SELECT
   'MD' AS state,
   'md_field_report' AS base_key,
   'appl4mIwgXu46SucR' AS base_id,
@@ -56,6 +72,38 @@ SELECT
 FROM `proj-tmc-mem-com.ep_2026_raw.ne_field_report__polling_places` t
 UNION ALL
 SELECT
+  'OH' AS state,
+  'oh_general_field_report' AS base_key,
+  'appElL9zBgVfQ94gP' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  t.`polling_place` AS name,
+  t.`pp_name` AS pp_name,
+  t.`address` AS address,
+  t.`city` AS city,
+  t.`zip` AS zip_code,
+  t.`county` AS county,
+  t.`location_notes` AS notes
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_general_field_report__polling_places` t
+UNION ALL
+SELECT
+  'OH' AS state,
+  'oh_primary_field_report' AS base_key,
+  'appVP4TefFTHTPOH4' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  t.`polling_place` AS name,
+  t.`pp_name` AS pp_name,
+  t.`address` AS address,
+  t.`city` AS city,
+  t.`zip` AS zip_code,
+  t.`county` AS county,
+  t.`location_notes` AS notes
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_primary_field_report__polling_places` t
+UNION ALL
+SELECT
   'PA' AS state,
   'pa_field_report' AS base_key,
   'app3EDk60ZEfTR79P' AS base_id,
@@ -70,6 +118,22 @@ SELECT
   t.`county` AS county,
   t.`location_notes` AS notes
 FROM `proj-tmc-mem-com.ep_2026_raw.pa_field_report__polling_places` t
+UNION ALL
+SELECT
+  'RI' AS state,
+  'ri_field_report' AS base_key,
+  'app79YXggpoQPIpem' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  t.`polling_place` AS name,
+  t.`pp_name` AS pp_name,
+  t.`address` AS address,
+  t.`city` AS city,
+  t.`zip` AS zip_code,
+  t.`county` AS county,
+  t.`location_notes` AS notes
+FROM `proj-tmc-mem-com.ep_2026_raw.ri_field_report__polling_places` t
 UNION ALL
 SELECT
   'UT' AS state,

@@ -458,8 +458,9 @@ To pause a sync without removing it, set `enabled = FALSE`.
 - **Type:** Individual (Nightly, ~3:00 AM ET)
 - **Civis job name:** "EP Misc Sync Jobs" (Civis job id 361625051)
 - **Schedule:** Nightly at 3:00 AM ET (Civis Container Script)
-- **APIs:** BigQuery (**read/write** — `asana_raw_2026`, `ep_2026_raw`),
-  Asana (read only), Google Sheets (**read only**). No Drive writes.
+- **APIs:** BigQuery (**read/write** — `asana_raw_2026`, `ep_2026_raw`, `ep`),
+  Asana (read only), Google Sheets (**read only**), Airtable (**read only** —
+  metadata `list_bases` call only, no record reads). No Drive writes.
   *(Corrected 2026-08-19: this line read "BigQuery (read only), Google Sheets +
   Drive (write)", which described the retired FL-signups task, not this runner.
   Both halves had inverted since. This file is machine-parsed by the
@@ -489,6 +490,8 @@ To pause a sync without removing it, set `enabled = FALSE`.
 | `infrastructure_sheet` | `daily` | Melts the two Infrastructure tabs of the 50-State EP Coalition Plan spreadsheet (`Infrastructure (General)` / `(Primary)`) into `ep_2026_raw.coalition_plan_infrastructure` — one row per (state, sheet column), cell text verbatim, ~1,632 rows/night, partitioned by `as_of_date` (stamped in **ET**, matching the runner's weekday convention). READ-ONLY toward the spreadsheet: program staff own it. Same-day reruns replace the day's partition via a load job (no streaming buffer, so a Civis retry is always clean). Parsed by `ep_2026_cleaned.coalition_plan_infrastructure`; consumed by ep-dashboards' infrastructure marts + Hex pages. Fails loudly on a missing/renamed tab or a row-3 layout change, and logs the header row every run so a column rename is visible the morning it happens. Design: `docs/coalition_plan_infrastructure_sync_spec.md`. |
 | `partner_source_codes` | `daily` | Snapshots **both** tabs of the 2026 EP Partner Engagement Form (`Form Responses 1` + `Source Codes`) into `ep_2026_raw.partner_source_codes`, ~161 rows/night, partitioned by `as_of_date`. The only capture of the **issuing** side of a source code — every other view of a code is downstream of a volunteer *using* one, so an issued-but-unused code, or one whose spelling drifted between issuance and capture, is invisible everywhere else. READ-ONLY toward the form; deliberately narrow on PII (org labels only, no requester names/emails). Reconciled by `ep_2026_cleaned.source_code_resolution`. Registered 2026-08-26 (`9cef07e`); confirmed running 2026-08-28. Design: `docs/volunteer_sheets_spec.md` §4.1. |
 | `hub_host_tracker` | `daily` | Refreshes the `Volunteer Landing Page` of every enabled tracker in `ep.hub_host_trackers` (today: MI's `EP Hub Host Tracker`) from that state's quiz bases — one row per volunteer who submitted any registered quiz, joined to `ep_2026_cleaned.volunteers` for phone/county and to all-time `ptv_raw_2026.shift_volunteers` for the `Ever Shifted?` latch. Writes exactly one tab (hidden `_data`) plus a README; the visible page is an array-formula mirror of it, and the human-owned `Assigned Host` dropdown sits outside the mirrored block, so nothing a staffer typed is ever clobbered and no keyed per-column update is needed. Rows are never removed or reordered — column A of `_data` is an append-only ledger read back each run, so a deleted Airtable quiz record is carried forward and flagged rather than shifting every host assignment below it up by one. Per-host tabs are hand-cloned from `TEMPLATE` and pull their distribution list with a single `FILTER`; those formulas are installed only by `--install-scaffolding`, never nightly, because that tab's kit checklist is program-staff content. READ-ONLY toward Airtable and toward the `Hosts` tab. Design: `docs/hub_host_tracker_spec.md`. |
+
+| `airtable_base_visibility` | `daily` | Records every Airtable base the sync-operations PAT can currently see into `ep.airtable_base_visibility` (one row per base, forever; first/last sighting + a triage verdict column the sweep never touches). One metadata call, ~192 MERGE rows/night. Exists because capture registration is only automatic for bases built through ep-airtable-utilities' spec system — its audit walks specs→registry and is structurally blind to a base with no spec, which is most of them. Worse, PAT access is *granted* by people who have no idea capture is a separate step, so a grant is silent (Amy's FL base became readable the week of 2026-09-01 and nothing noticed). **Not a discovery mechanism** — `list_bases()` returns only what has been granted; the human canvass finds bases, this catches them once granted. Reads `ep.v_airtable_base_triage_queue` for the log line. Judgment about what turns up is deliberately NOT here — see the `airtable-base-triage` dispatch task type in `.claude/dispatch.yaml`. Registered 2026-09-02. |
 
 **Retired tasks:** `event_975203_signups` (Mobilize event 975203 FL-training
 signup roster → Google Sheet for FL program, ran `mon` Jul 14 – Aug 18 2026;
@@ -586,9 +589,15 @@ removed, per the retire contract).
 
 #### Credentials to attach
 
-- `BIGQUERY_CREDENTIALS` — service account JSON in password field (reuse Civis
-  credential ID 38653). Needs read/write on the datasets registered tasks land
-  in (today: `asana_raw_2026`, `ep_2026_raw`) and read on `ep` (registries).
+- `BIGQUERY_CREDENTIALS` — service account JSON in password field. Needs
+  read/write on the datasets registered tasks land in (today: `asana_raw_2026`,
+  `ep_2026_raw`) and **read/write on `ep`** — `airtable_base_visibility` writes
+  a registry-dataset table, which the earlier "read on `ep`" note did not cover.
+  *The live job is wired to credential **39428** (`BQ com-dbt`), not the 38653
+  this line used to name. A key rotation broke 39428 overnight 2026-09-01/02 and
+  turned the whole Civis board red; every task in this job failed 2026-09-02
+  03:00 ET with `Failed to parse JSON credential BIGQUERY_CREDENTIALS_PASSWORD`.
+  Fixed same day and confirmed green by a manual re-run (858535496).*
 - `GOOGLE_SHEETS_CREDENTIALS` — the `sheets-controllers@sheets-controllers`
   service-account JSON in the password field (same credential the volunteer
   sheets job uses). The SA must be able to reach every spreadsheet or Drive
@@ -599,6 +608,18 @@ removed, per the retire contract).
   `ASANA_API_KEY_PASSWORD`, which `asana_ep_kanban` reads). Currently Rob's
   personal PAT (sees the whole `commoncause.org` workspace); a dedicated PAT is
   an open question in `docs/asana_nm_sync_spec.md` §7.
+- `AIRTABLE_API_KEY` — the sync-operations PAT (Civis credential **39288**,
+  "Airtable Sync Operations PAT 2026-06" — the same one the Airtable bases sync
+  job uses). Exposes `AIRTABLE_API_KEY_PASSWORD`, read by
+  `airtable_base_visibility`. **NOT YET ATTACHED as of 2026-09-02 — this is a
+  hard prerequisite for pushing that task.** `civis_tune` cannot attach
+  credentials; it is a Civis UI action. Without it the task fails at 3 AM,
+  and because the runner exits non-zero when any selected task fails, the whole
+  job goes red and emails on failure even though the other four tasks succeeded.
+  The `airtable` pip extra is the matching half and is already in
+  `civis/run_misc_jobs.sh` — the ccef-connections PIN (v0.12.1) was never the
+  problem here, `list_bases` has existed since v0.5.0; this job had simply never
+  installed pyairtable.
 - *No PTV or Airtable credential needed for the current task set.*
 
 **Registering a new task means re-checking this list**, plus the entrypoint's

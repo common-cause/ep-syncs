@@ -4,8 +4,9 @@
 #     bash app/civis/run_misc_jobs.sh
 # Edit this file (not the Civis UI) to change setup/run steps. See
 # civis/SCHEDULED_SCRIPTS.md for the full job setup spec (docker image,
-# credentials, schedule). Requires BIGQUERY_CREDENTIALS_PASSWORD and
-# GOOGLE_SHEETS_CREDENTIALS_PASSWORD on the job.
+# credentials, schedule). Requires BIGQUERY_CREDENTIALS_PASSWORD,
+# GOOGLE_SHEETS_CREDENTIALS_PASSWORD, ASANA_API_KEY_PASSWORD and
+# AIRTABLE_API_KEY_PASSWORD on the job.
 #
 # ONE nightly Civis job (~3 AM ET) runs this with no arguments; the runner
 # self-selects the tasks scheduled for tonight's ET weekday from
@@ -27,8 +28,11 @@
 #
 # Extras: bigquery + sheets (SheetsConnector) + pandas (infrastructure_sheet
 # loads via BigQueryConnector.load_dataframe, and pandas is its OWN extra -- the
-# bigquery extra does not pull it). The base image ships pandas, but naming it
-# here means the job doesn't depend on that staying true.
-pip install "ccef-connections[bigquery,sheets,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.12.1"
+# bigquery extra does not pull it) + airtable (airtable_base_visibility calls
+# AirtableConnector.list_bases, added in v0.5.0, so the PIN is fine and it was
+# the EXTRA that was missing -- this job had never installed pyairtable).
+# The base image ships pandas, but naming it here means the job doesn't depend
+# on that staying true.
+pip install "ccef-connections[bigquery,sheets,airtable,pandas] @ git+https://github.com/common-cause/ccef_connections.git@v0.12.1"
 pip install pyyaml tzdata
 python app/run_misc_jobs.py

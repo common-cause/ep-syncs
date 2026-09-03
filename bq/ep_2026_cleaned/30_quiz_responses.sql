@@ -5,8 +5,407 @@
 -- snapshot as part of the go-live checklist.)
 
 CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.quiz_responses`
-OPTIONS(description="All 2026 EP quiz responses across state quiz bases (registry: ep.airtable_sync_sources, base_type='quiz'). One row per Airtable record. score/score_max derive from the per-base grader column 'correct_answers_out_of_{n}'; passed = score = score_max. Per-question answers stay in the ep_2026_raw typed tables / airtable_records_latest JSON. email normalized via norm_email. state comes from the registry, never from record fields.")
+OPTIONS(description="All 2026 EP quiz responses across state quiz bases (registry: ep.airtable_sync_sources, base_type='quiz'). One row per Airtable record. FILTERED to created_at >= 2026-01-01: many states reuse ONE standing quiz base across cycles (MA/MD/MN/MO) and the archive-only bases are captured too, so ~3.1k pre-2026 responses live in ep_2026_raw. Read those from the raw tables, not from here. score/score_max derive from the per-base grader column 'correct_answers_out_of_{n}'; passed = score = score_max. Per-question answers stay in the ep_2026_raw typed tables / airtable_records_latest JSON. email normalized via norm_email. state comes from the registry, never from record fields.")
 AS
+SELECT
+  'AZ' AS state,
+  'az_2024_primary_quiz' AS base_key,
+  'appYnsJVieUJ01mQJ' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_6` AS FLOAT64) AS INT64) AS score,
+  CAST(6 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_6` AS FLOAT64) AS INT64)) = (CAST(6 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.az_2024_primary_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'AZ' AS state,
+  'az_ppe_quiz' AS base_key,
+  'appn7MUHZVg7GP3nx' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_6` AS score,
+  CAST(6 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_6`) = (CAST(6 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.az_ppe_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'CA' AS state,
+  'ca_quiz' AS base_key,
+  'appRYY6O0UpCCYRS9' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ca_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'CO' AS state,
+  'co_quiz' AS base_key,
+  'appGVJz2eKJStqEBM' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.co_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'FL' AS state,
+  'fl_quiz' AS base_key,
+  'appn1FMQXWJJ5gJrC' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  CAST(NULL AS STRING) AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_6` AS FLOAT64) AS INT64) AS score,
+  CAST(6 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_6` AS FLOAT64) AS INT64)) = (CAST(6 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.fl_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'GA' AS state,
+  'ga_quiz' AS base_key,
+  'appuRbSbt4RIjElGZ' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ga_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'HI' AS state,
+  'hi_test_poll_monitor_quiz' AS base_key,
+  'appqVQ7liq9qrWQLZ' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.hi_test_poll_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'HI' AS state,
+  'hi_test_quiz_3' AS base_key,
+  'app2JKY8lfuLT4WUN' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.hi_test_quiz_3__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'HI' AS state,
+  'hi_test_roving_quiz' AS base_key,
+  'appu2ZL9aKOKyWPq3' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.hi_test_roving_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'IL' AS state,
+  'il_quiz' AS base_key,
+  'appq8UZtfaifIQOYG' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.il_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'IN' AS state,
+  'in_quiz' AS base_key,
+  'appeq65B9UnHc5WrZ' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.in_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MA' AS state,
+  'ma_2026_primary_quiz' AS base_key,
+  'apptEGlKqTEpxYzdx' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ma_2026_primary_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MA' AS state,
+  'ma_quiz' AS base_key,
+  'apphofTflHDyWfwPt' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ma_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MD' AS state,
+  'md_quiz' AS base_key,
+  'appiTRLmZURrfDYlq' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.md_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2024aug_poll_monitor_quiz' AS base_key,
+  'appPBsj9kt6ExO7Ea' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2024aug_poll_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2024aug_rover_quiz' AS base_key,
+  'appBNU7zA8cozoFwA' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2024aug_rover_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2024nov_poll_monitor_quiz' AS base_key,
+  'appfJBlyUxkMgAr5J' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2024nov_poll_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2024nov_rover_quiz' AS base_key,
+  'apphqcmDWqLazYCQF' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2024nov_rover_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2024nov_rover_quiz_2' AS base_key,
+  'appBX8AbSJZshgUOI' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2024nov_rover_quiz_2__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2025_poll_monitor_quiz' AS base_key,
+  'appsXsltntbrhiIVr' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2025_poll_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_2025_rover_quiz' AS base_key,
+  'appNUzr57HOjwGtlR' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  t.`shift` AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_2025_rover_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
 SELECT
   'MI' AS state,
   'mi_poll_monitor_quiz' AS base_key,
@@ -24,6 +423,26 @@ SELECT
   CAST(NULL AS INT64) AS role_id_2,
   t.`shift` AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.mi_poll_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MI' AS state,
+  'mi_quiz' AS base_key,
+  'appqrfUBHeyLElp4c' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mi_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'MI' AS state,
@@ -42,6 +461,197 @@ SELECT
   CAST(NULL AS INT64) AS role_id_2,
   t.`shift` AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.mi_rover_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MN' AS state,
+  'mn_quiz' AS base_key,
+  'appaGoPvqUNjLgePV' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mn_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MN' AS state,
+  'mn_quiz_2' AS base_key,
+  'app9zbiKxghWvolcR' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mn_quiz_2__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MO' AS state,
+  'mo_field_monitor_quiz' AS base_key,
+  'appxeBwiz4MFcnpWy' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mo_field_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MO' AS state,
+  'mo_legal_monitor_quiz' AS base_key,
+  'appybtefyBFwRgxLG' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mo_legal_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MO' AS state,
+  'mo_quiz' AS base_key,
+  'appYd6rWC3UwNDkkh' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mo_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'MO' AS state,
+  'mo_roving_monitor_quiz' AS base_key,
+  'app0FeBv7PdFHiGLh' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.mo_roving_monitor_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'NE' AS state,
+  'ne_2025_municipal_quiz' AS base_key,
+  'appKIfQllL5sIoEep' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ne_2025_municipal_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'NE' AS state,
+  'ne_quiz' AS base_key,
+  'app5UaFI5cwTVHjnh' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ne_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'NM' AS state,
+  'nm_quiz' AS base_key,
+  'appCRnzg5MOqKySxF' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.nm_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'NM' AS state,
+  'nm_quiz_2' AS base_key,
+  'appHaQmPRR7ySUjyh' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.nm_quiz_2__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'NY' AS state,
@@ -60,6 +670,26 @@ SELECT
   SAFE_CAST(t.`role_id_2` AS INT64) AS role_id_2,
   CAST(NULL AS STRING) AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.ny_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'OH' AS state,
+  'oh_quiz' AS base_key,
+  'app0UrJf6TDyB4ZJc' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'OR' AS state,
@@ -71,13 +701,14 @@ SELECT
   `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
   t.`email` AS email_raw,
   t.`full_name` AS full_name,
-  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_5` AS FLOAT64) AS INT64) AS score,
+  t.`correct_answers_out_of_5` AS score,
   CAST(5 AS INT64) AS score_max,
-  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_5` AS FLOAT64) AS INT64)) = (CAST(5 AS INT64)) AS passed,
+  (t.`correct_answers_out_of_5`) = (CAST(5 AS INT64)) AS passed,
   SAFE_CAST(t.`role_id` AS INT64) AS role_id,
   CAST(NULL AS INT64) AS role_id_2,
   CAST(NULL AS STRING) AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.or_dropbox_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'OR' AS state,
@@ -96,6 +727,7 @@ SELECT
   CAST(NULL AS INT64) AS role_id_2,
   CAST(NULL AS STRING) AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.or_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'OR' AS state,
@@ -107,13 +739,33 @@ SELECT
   `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
   t.`email` AS email_raw,
   t.`full_name` AS full_name,
-  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_3` AS FLOAT64) AS INT64) AS score,
+  t.`correct_answers_out_of_3` AS score,
   CAST(3 AS INT64) AS score_max,
-  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_3` AS FLOAT64) AS INT64)) = (CAST(3 AS INT64)) AS passed,
+  (t.`correct_answers_out_of_3`) = (CAST(3 AS INT64)) AS passed,
   SAFE_CAST(t.`role_id` AS INT64) AS role_id,
   CAST(NULL AS INT64) AS role_id_2,
   CAST(NULL AS STRING) AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.or_trusted_messenger_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'PA' AS state,
+  'pa_2024_quiz' AS base_key,
+  'appKkWc6WsUrEJExg' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.pa_2024_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'PA' AS state,
@@ -132,6 +784,83 @@ SELECT
   SAFE_CAST(t.`role_id_2` AS INT64) AS role_id_2,
   t.`what_type_of_poll_shift_do_you_want` AS shift_type
 FROM `proj-tmc-mem-com.ep_2026_raw.pa_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'RI' AS state,
+  'ri_quiz' AS base_key,
+  'app4Up9fHXPMnmBDb' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ri_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'US' AS state,
+  'tabletop_quiz' AS base_key,
+  'appnFRWWYLPbGotEp' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.tabletop_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'UT' AS state,
+  'ut_2024_quiz' AS base_key,
+  'appH8fPWHHeawz9pF' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ut_2024_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'UT' AS state,
+  'ut_legacy_quiz' AS base_key,
+  'appHNtD1RXQppBv4C' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ut_legacy_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
 UNION ALL
 SELECT
   'UT' AS state,
@@ -149,4 +878,43 @@ SELECT
   SAFE_CAST(t.`role_id` AS INT64) AS role_id,
   SAFE_CAST(t.`role_id_2` AS INT64) AS role_id_2,
   CAST(NULL AS STRING) AS shift_type
-FROM `proj-tmc-mem-com.ep_2026_raw.ut_quiz__quiz_responses` t;
+FROM `proj-tmc-mem-com.ep_2026_raw.ut_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'UT' AS state,
+  'ut_roving_quiz' AS base_key,
+  'appUxHOTmGQvDfWuW' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  t.`correct_answers_out_of_4` AS score,
+  CAST(4 AS INT64) AS score_max,
+  (t.`correct_answers_out_of_4`) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.ut_roving_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01')
+UNION ALL
+SELECT
+  'WI' AS state,
+  'wi_quiz' AS base_key,
+  'appqx3wNVRqnsu8yM' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(t.`email`) AS email,
+  t.`email` AS email_raw,
+  t.`full_name` AS full_name,
+  SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64) AS score,
+  CAST(4 AS INT64) AS score_max,
+  (SAFE_CAST(SAFE_CAST(t.`correct_answers_out_of_4` AS FLOAT64) AS INT64)) = (CAST(4 AS INT64)) AS passed,
+  SAFE_CAST(t.`role_id` AS INT64) AS role_id,
+  CAST(NULL AS INT64) AS role_id_2,
+  CAST(NULL AS STRING) AS shift_type
+FROM `proj-tmc-mem-com.ep_2026_raw.wi_quiz__quiz_responses` t
+WHERE t._airtable_created_time >= TIMESTAMP('2026-01-01');

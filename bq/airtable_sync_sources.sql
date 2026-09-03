@@ -85,3 +85,143 @@ VALUES
   ('OR Trusted Messenger Quiz', 'OR', 'appQEJiaDCKt0SKEA', 'quiz',         'or_trusted_messenger_quiz', NULL, NULL, FALSE, 'ep-syncs seed 2026-07-23', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), NULL),
   ('MI Poll Monitor Quiz',      'MI', 'appS6G8BSqMM1Ho2a', 'quiz',         'mi_poll_monitor_quiz',      NULL, NULL, FALSE, 'ep-syncs seed 2026-07-23', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), NULL),
   ('MI Rover Quiz',             'MI', 'appwb0e1CaVbTOBFm', 'quiz',         'mi_rover_quiz',             NULL, NULL, FALSE, 'ep-syncs seed 2026-07-23', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), NULL);
+
+-- ---------------------------------------------------------------------------
+-- Backfill registration, 2026-09-02.
+--
+-- Two things landed here at once:
+--   1. Four field-report bases ep-dashboards found configured-but-uncaptured
+--      (MA, RI, OH general, OH primary). MA was rendering as "not captured"
+--      in a primaries funder report despite actively collecting.
+--   2. Every remaining non-template quiz base the sync-operations PAT can see
+--      (40 of them), on the standing decision that quiz completion is the
+--      training-progress signal and is worth having in BQ whether or not a
+--      dashboard reads it yet.
+--
+-- WHY THE ARCHIVES ARE SAFE TO CAPTURE: 3,082 of the 3,557 newly-captured
+-- quiz records predate 2026. They are NOT separable at base granularity --
+-- MA/MD/MN/MO reuse ONE standing base across cycles, so a single base holds
+-- both 2024 and 2026 responses. Cycle selection therefore happens per ROW in
+-- the ep_2026_cleaned.quiz_responses view (created_at >= 2026-01-01), added
+-- in the same commit. Registering an archive base does not put its rows in
+-- the 2026 interface layer; it puts them in ep_2026_raw, which is the point.
+--
+-- Empty bases are registered deliberately: a state reusing a dormant base is
+-- exactly the failure this backfill is cleaning up, and an enabled row makes
+-- that capture automatic instead of dependent on someone noticing.
+--
+-- MERGE (not INSERT) on base_id per the registration contract above, so
+-- re-running this file is idempotent and preserves registered_at.
+-- ---------------------------------------------------------------------------
+
+MERGE `proj-tmc-mem-com.ep.airtable_sync_sources` T
+USING (
+  SELECT * FROM UNNEST([
+    STRUCT<name STRING, state STRING, base_id STRING, base_type STRING,
+           bq_table_prefix STRING, exclude_tables ARRAY<STRING>, notes STRING>
+    ('MA Field Report', 'MA', 'appqtgaUrIVwIpIsV', 'field_report', 'ma_field_report',
+     CAST(NULL AS ARRAY<STRING>), 'MA 2026 primary. Bespoke \'Polling Place Checklist\' table instead of stock Checklist Submissions -- added to the checklist_submissions entity table_keys in airtable_views.py in the same commit, or its 135 rows land in raw and never reach the cleaned view.'),
+    ('RI Field Report', 'RI', 'app79YXggpoQPIpem', 'field_report', 'ri_field_report',
+     CAST(NULL AS ARRAY<STRING>), 'RI 2026 primary (votes 09-09). Incident Reports empty at registration.'),
+    ('OH General Field Report', 'OH', 'appElL9zBgVfQ94gP', 'field_report', 'oh_general_field_report',
+     CAST(NULL AS ARRAY<STRING>), 'OH 2026 general. All five tables empty at registration -- capture exists so the cleaned views can tell \'collected nothing\' from \'never wired\'.'),
+    ('OH Primary Field Report', 'OH', 'appVP4TefFTHTPOH4', 'field_report', 'oh_primary_field_report',
+     CAST(NULL AS ARRAY<STRING>), 'OH 2026 primary. Pre-spec base; 3,145 polling places loaded.'),
+    ('MA Primary Quiz 2026', 'MA', 'apptEGlKqTEpxYzdx', 'quiz', 'ma_2026_primary_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'MA 2026 primary certification quiz. 304 responses, all 2026.'),
+    ('NM Quiz', 'NM', 'appCRnzg5MOqKySxF', 'quiz', 'nm_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'LIVE 2026: 51 responses May-Aug 2026. NM was documented as using neither PTV nor Airtable (hence the Asana capture in misc_jobs/asana_ep_kanban.py) -- that is wrong for quizzes. See docs/asana_nm_sync_spec.md.'),
+    ('NM Quiz 2', 'NM', 'appHaQmPRR7ySUjyh', 'quiz', 'nm_quiz_2',
+     CAST(NULL AS ARRAY<STRING>), 'Duplicate-named empty NM quiz base. Registered so a reuse is captured automatically rather than silently missed.'),
+    ('MA Quiz', 'MA', 'apphofTflHDyWfwPt', 'quiz', 'ma_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Standing MA quiz base, NOT a per-cycle clone: 695 responses spanning 2024-09 to 2026-09 (664 pre-2026, 31 in 2026). Cycle cannot be separated at base level -- the cleaned view\'s 2026 predicate does it per row.'),
+    ('MD Quiz', 'MD', 'appiTRLmZURrfDYlq', 'quiz', 'md_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Standing MD quiz base. 62 responses, 34 pre-2026 / 28 in 2026.'),
+    ('MN Quiz', 'MN', 'appaGoPvqUNjLgePV', 'quiz', 'mn_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Standing MN quiz base. 61 responses, 52 pre-2026 / 9 in 2026.'),
+    ('MN Quiz 2', 'MN', 'app9zbiKxghWvolcR', 'quiz', 'mn_quiz_2',
+     CAST(NULL AS ARRAY<STRING>), 'Second standing MN quiz base. 42 responses, 41 pre-2026 / 1 in 2026.'),
+    ('MO Quiz', 'MO', 'appYd6rWC3UwNDkkh', 'quiz', 'mo_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Standing MO quiz base. 462 responses, 427 pre-2026 / 35 in 2026.'),
+    ('MO Legal Monitor Quiz', 'MO', 'appybtefyBFwRgxLG', 'quiz', 'mo_legal_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Standing MO legal-monitor quiz. 39 responses, 36 pre-2026 / 3 in 2026.'),
+    ('MO Roving Monitor Quiz', 'MO', 'app0FeBv7PdFHiGLh', 'quiz', 'mo_roving_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Standing MO roving-monitor quiz. 121 responses, 108 pre-2026 / 13 in 2026.'),
+    ('MO Field Monitor Quiz', 'MO', 'appxeBwiz4MFcnpWy', 'quiz', 'mo_field_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty MO field-monitor quiz base.'),
+    ('MI 2025 Poll Monitor Quiz', 'MI', 'appsXsltntbrhiIVr', 'quiz', 'mi_2025_poll_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 27 responses, all 2025.'),
+    ('MI 2025 Rover Quiz', 'MI', 'appNUzr57HOjwGtlR', 'quiz', 'mi_2025_rover_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 32 responses, all 2025.'),
+    ('MI Aug 2024 Poll Monitor Quiz', 'MI', 'appPBsj9kt6ExO7Ea', 'quiz', 'mi_2024aug_poll_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 40 responses, all 2024.'),
+    ('MI Aug 2024 Rover Quiz', 'MI', 'appBNU7zA8cozoFwA', 'quiz', 'mi_2024aug_rover_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 10 responses, all 2024.'),
+    ('MI Nov 2024 Poll Monitor Quiz', 'MI', 'appfJBlyUxkMgAr5J', 'quiz', 'mi_2024nov_poll_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 110 responses, all 2024.'),
+    ('MI Nov 2024 Rover Quiz', 'MI', 'apphqcmDWqLazYCQF', 'quiz', 'mi_2024nov_rover_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 38 responses (37 in 2024, 1 in 2025).'),
+    ('MI Nov 2024 Rover Quiz 2', 'MI', 'appBX8AbSJZshgUOI', 'quiz', 'mi_2024nov_rover_quiz_2',
+     CAST(NULL AS ARRAY<STRING>), 'Duplicate-named empty MI rover base.'),
+    ('MI Quiz', 'MI', 'appqrfUBHeyLElp4c', 'quiz', 'mi_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty standing MI quiz base.'),
+    ('AZ PPE Quiz', 'AZ', 'appn7MUHZVg7GP3nx', 'quiz', 'az_ppe_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 88 responses, all 2024.'),
+    ('AZ 2024 Primary Quiz', 'AZ', 'appYnsJVieUJ01mQJ', 'quiz', 'az_2024_primary_quiz',
+     ['Sheet1'], 'Archive: 88 responses, all 2024. Carries an empty \'Sheet1\' import leftover -- excluded.'),
+    ('CO Quiz', 'CO', 'appGVJz2eKJStqEBM', 'quiz', 'co_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 150 responses, all 2024.'),
+    ('PA 2024 Quiz', 'PA', 'appKkWc6WsUrEJExg', 'quiz', 'pa_2024_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive and the largest single quiz base: 1,090 responses, all 2024. Distinct from the registered 2026 pa_quiz base.'),
+    ('UT 2024 Quiz', 'UT', 'appH8fPWHHeawz9pF', 'quiz', 'ut_2024_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 32 responses, all 2024. Base name is misspelled \'Utahe Election Protection Quiz\' in Airtable -- do not \'fix\' it, the id is what matters.'),
+    ('UT Roving Quiz', 'UT', 'appUxHOTmGQvDfWuW', 'quiz', 'ut_roving_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 8 responses, all 2024.'),
+    ('UT Legacy Quiz', 'UT', 'appHNtD1RXQppBv4C', 'quiz', 'ut_legacy_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty pre-2026 UT quiz base (\'Utah Election Protection Quiz\').'),
+    ('FL Quiz', 'FL', 'appn1FMQXWJJ5gJrC', 'quiz', 'fl_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 1 response, 2024.'),
+    ('GA Quiz', 'GA', 'appuRbSbt4RIjElGZ', 'quiz', 'ga_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Archive: 3 responses, 2024. Unrelated to the GA poll-monitor Interface-page blocker (app15GgANJlyh2C6X), which registration cannot solve.'),
+    ('CA Quiz', 'CA', 'appRYY6O0UpCCYRS9', 'quiz', 'ca_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('IL Quiz', 'IL', 'appq8UZtfaifIQOYG', 'quiz', 'il_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('IN Quiz', 'IN', 'appeq65B9UnHc5WrZ', 'quiz', 'in_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('NE Quiz', 'NE', 'app5UaFI5cwTVHjnh', 'quiz', 'ne_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('NE 2025 Municipal Quiz', 'NE', 'appKIfQllL5sIoEep', 'quiz', 'ne_2025_municipal_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('OH Quiz', 'OH', 'app0UrJf6TDyB4ZJc', 'quiz', 'oh_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('RI Quiz', 'RI', 'app4Up9fHXPMnmBDb', 'quiz', 'ri_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('WI Quiz', 'WI', 'appqx3wNVRqnsu8yM', 'quiz', 'wi_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Empty at registration.'),
+    ('HI Test Poll Monitor Quiz', 'HI', 'appqVQ7liq9qrWQLZ', 'quiz', 'hi_test_poll_monitor_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Test base: 3 responses, 2024.'),
+    ('HI Test Roving Quiz', 'HI', 'appu2ZL9aKOKyWPq3', 'quiz', 'hi_test_roving_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Test base, empty.'),
+    ('HI Test Quiz 3', 'HI', 'app2JKY8lfuLT4WUN', 'quiz', 'hi_test_quiz_3',
+     CAST(NULL AS ARRAY<STRING>), 'Test base, empty.'),
+    ('Tabletop Quiz', 'US', 'appnFRWWYLPbGotEp', 'quiz', 'tabletop_quiz',
+     CAST(NULL AS ARRAY<STRING>), 'Tabletop-exercise quiz, not a state programme -- state is \'US\', the one non-state code in this registry. Empty; if it is ever used, \'US\' shows up in the cleaned views rather than a plausible-looking wrong state.')
+  ])
+) S
+ON T.base_id = S.base_id
+WHEN MATCHED THEN UPDATE SET
+  name            = S.name,
+  state           = S.state,
+  base_type       = S.base_type,
+  bq_table_prefix = S.bq_table_prefix,
+  exclude_tables  = S.exclude_tables,
+  enabled         = TRUE,
+  updated_at      = CURRENT_TIMESTAMP(),
+  notes           = S.notes
+WHEN NOT MATCHED THEN INSERT
+  (name, state, base_id, base_type, bq_table_prefix, exclude_tables,
+   canonical_overrides, enabled, registered_by, registered_at, updated_at, notes)
+VALUES
+  (S.name, S.state, S.base_id, S.base_type, S.bq_table_prefix, S.exclude_tables,
+   NULL, TRUE, 'ep-syncs backfill 2026-09-02', CURRENT_TIMESTAMP(), CURRENT_TIMESTAMP(), S.notes);

@@ -5,8 +5,26 @@
 -- snapshot as part of the go-live checklist.)
 
 CREATE OR REPLACE VIEW `proj-tmc-mem-com.ep_2026_cleaned.checklist_submissions`
-OPTIONS(description="All 2026 EP polling-place checklist submissions across state field-report bases (stock 'Checklist Submissions' tables plus bespoke variants like UT's 'Poll Monitoring Checklist'). One row per Airtable record. Volunteer identity resolves from direct fields where the base has them, else via the volunteer record link into that base's Shifted Volunteers table. Per-question answers are NEVER canonicalized across states -- read them from the ep_2026_raw typed tables / airtable_records_latest JSON. state comes from the registry.")
+OPTIONS(description="All 2026 EP polling-place checklist submissions across state field-report bases (stock 'Checklist Submissions' tables plus bespoke variants: UT's 'Poll Monitoring Checklist' and MA's 'Polling Place Checklist'). A state naming its checklist table something new lands in ep_2026_raw but NOT here until its key is added to this entity's table_keys. One row per Airtable record. Volunteer identity resolves from direct fields where the base has them, else via the volunteer record link into that base's Shifted Volunteers table. Per-question answers are NEVER canonicalized across states -- read them from the ep_2026_raw typed tables / airtable_records_latest JSON. state comes from the registry.")
 AS
+SELECT
+  'MA' AS state,
+  'ma_field_report' AS base_key,
+  'appqtgaUrIVwIpIsV' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  CAST(NULL AS STRING) AS volunteer_email,
+  CAST(NULL AS STRING) AS volunteer_email_raw,
+  t.`volunteer_name` AS volunteer_name,
+  CAST(NULL AS STRING) AS volunteer_phone,
+  pp.`polling_place` AS polling_place,
+  pp.`county` AS county,
+  t.`polling_place_checklist` AS checklist_name
+FROM `proj-tmc-mem-com.ep_2026_raw.ma_field_report__polling_place_checklist` t
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.ma_field_report__polling_places` pp
+  ON pp._airtable_record_id = JSON_VALUE(t.`polling_places`, '$[0]')
+UNION ALL
 SELECT
   'MD' AS state,
   'md_field_report' AS base_key,
@@ -64,6 +82,46 @@ LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.ne_field_report__shifted_volunteers` sv
   ON sv._airtable_record_id = JSON_VALUE(t.`volunteer`, '$[0]')
 UNION ALL
 SELECT
+  'OH' AS state,
+  'oh_general_field_report' AS base_key,
+  'appElL9zBgVfQ94gP' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(sv.`email`) AS volunteer_email,
+  sv.`email` AS volunteer_email_raw,
+  sv.`full_name` AS volunteer_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(sv.`phone_number`) AS volunteer_phone,
+  pp.`polling_place` AS polling_place,
+  pp.`county` AS county,
+  t.`polling_place_checklist` AS checklist_name
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_general_field_report__checklist_submissions` t
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.oh_general_field_report__polling_places` pp
+  ON pp._airtable_record_id = JSON_VALUE(t.`polling_places`, '$[0]')
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.oh_general_field_report__shifted_volunteers` sv
+  ON sv._airtable_record_id = JSON_VALUE(t.`volunteer`, '$[0]')
+UNION ALL
+SELECT
+  'OH' AS state,
+  'oh_primary_field_report' AS base_key,
+  'appVP4TefFTHTPOH4' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(sv.`email`) AS volunteer_email,
+  sv.`email` AS volunteer_email_raw,
+  sv.`full_name` AS volunteer_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(sv.`phone_number`) AS volunteer_phone,
+  pp.`polling_place` AS polling_place,
+  pp.`county` AS county,
+  t.`polling_place_checklist` AS checklist_name
+FROM `proj-tmc-mem-com.ep_2026_raw.oh_primary_field_report__checklist_submissions` t
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.oh_primary_field_report__polling_places` pp
+  ON pp._airtable_record_id = JSON_VALUE(t.`polling_places`, '$[0]')
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.oh_primary_field_report__shifted_volunteers` sv
+  ON sv._airtable_record_id = JSON_VALUE(t.`volunteer`, '$[0]')
+UNION ALL
+SELECT
   'PA' AS state,
   'pa_field_report' AS base_key,
   'app3EDk60ZEfTR79P' AS base_id,
@@ -81,6 +139,24 @@ FROM `proj-tmc-mem-com.ep_2026_raw.pa_field_report__checklist_submissions` t
 LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.pa_field_report__polling_places` pp
   ON pp._airtable_record_id = JSON_VALUE(t.`polling_places`, '$[0]')
 LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.pa_field_report__shifted_volunteers` sv
+  ON sv._airtable_record_id = JSON_VALUE(t.`volunteer`, '$[0]')
+UNION ALL
+SELECT
+  'RI' AS state,
+  'ri_field_report' AS base_key,
+  'app79YXggpoQPIpem' AS base_id,
+  t._airtable_record_id AS record_id,
+  t._airtable_created_time AS created_at,
+  t._synced_at AS synced_at,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_email`(sv.`email`) AS volunteer_email,
+  sv.`email` AS volunteer_email_raw,
+  sv.`full_name` AS volunteer_name,
+  `proj-tmc-mem-com.ep_2026_cleaned.norm_phone`(sv.`phone_number`) AS volunteer_phone,
+  t.`polling_place` AS polling_place,
+  CAST(NULL AS STRING) AS county,
+  CAST(NULL AS STRING) AS checklist_name
+FROM `proj-tmc-mem-com.ep_2026_raw.ri_field_report__checklist_submissions` t
+LEFT JOIN `proj-tmc-mem-com.ep_2026_raw.ri_field_report__shifted_volunteers` sv
   ON sv._airtable_record_id = JSON_VALUE(t.`volunteer`, '$[0]')
 UNION ALL
 SELECT

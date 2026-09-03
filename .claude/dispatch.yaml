@@ -1,0 +1,261 @@
+# =============================================================================
+# DISPATCH CONTRACT — ep-syncs
+# Format: templates/dispatch.yaml v1 (meta repo) · Law: docs/dispatch_treaty.md
+# =============================================================================
+# ep-syncs' FIRST contract. Until 2026-09-02 this project deliberately had none
+# — treaty §2.5, absence = hands-off — and the 2026-08-26 finding stands
+# unchanged for the work it covered: source-code judgment consolidates in
+# ep-dashboards' source-code-triage task type, and ep-syncs supplies the
+# detection surface rather than exercising the judgment. Nothing here reopens
+# that.
+#
+# What is new is a different job that genuinely splits along the fleet's
+# doctrine line (classification #2, "judgment jobs local, deterministic
+# pipelines on Civis"):
+#
+#   DETERMINISTIC HALF — misc_jobs/airtable_base_visibility.py, a plain nightly
+#   sweep recording which Airtable bases the sync PAT can see. Civis, task in
+#   run_misc_jobs.py. NOT a task type and never dispatched.
+#
+#   JUDGMENT HALF — deciding what a newly-visible base IS. Whether "Make the
+#   Road NV Social Media Monitoring Reports" is EP program data, or which of two
+#   same-named NM quiz bases is live, is a rubric-and-world-knowledge call. That
+#   is the task type below.
+#
+# WHY THE SPLIT IS REAL AND NOT CEREMONY: the sweep cannot be judgment (it runs
+# in a Civis container with no model), and the judgment cannot be Civis
+# (subscription Claude Code is not invokable from Civis at all). Building either
+# half into the other was never available.
+#
+# NO GRANT IS PROPOSED HERE. Tiers are dated grants in the meta catalog
+# (projects_index.yaml) and only Rob issues one. The roster will compute
+# dispatchable: false for this file, which is the correct resting state. The
+# freeze below is deliberately belt-and-braces on top of that.
+# =============================================================================
+
+version: 1
+revision: 1
+project: ep-syncs
+owner: rkerth-cc
+last_verified: 2026-09-02
+
+status:
+  freezes:
+    - "No unattended fire until the bootstrap backlog is cleared WITH Rob.
+       The first sweep (2026-09-02) opened the queue at 134 new_unregistered
+       bases — the accumulated history of every base ever shared with this PAT,
+       not a night's drift. Clearing it means bulk-muting whole categories, and
+       a wrong bulk mute is the one action in this task type that is hard to
+       notice being wrong. LIFTS when ep.v_airtable_base_triage_queue returns
+       fewer than 10 new_unregistered rows, which is the observable form of
+       'the backlog is done and this is now a drift detector'."
+
+notes:
+  - "All queries run through the BigQuery MCP (bq_query) against proj-tmc-mem-com."
+  - "READ-ONLY toward Airtable throughout. This project never writes to a base;
+     the only Airtable call in this task type is a metadata read
+     (--check-access) to confirm the PAT can read a base before enabling it."
+  - "PII: base names and counts only. Triage needs the base LIST, never its
+     records. No volunteer data belongs in any run report from this project."
+  - "Registration of bases built through ep-airtable-utilities' spec system is
+     THAT project's job (register_capture_source.py at go-live, asserted by its
+     audit_capture_registration.py). This task type exists only for bases with
+     no spec there — hand-cloned, prior-cycle, or off-process. If a base turns
+     up here that clearly has a spec in that repo, the correct action is to
+     report the gap, not to paper over it with a manual registry row."
+
+task_types:
+
+  - id: airtable-base-triage
+    title: Airtable base triage pass
+    class: loop
+    callable_by: human
+    summary: >
+      Decides what to do about Airtable bases that have become visible to the
+      sync-operations PAT but are not registered for BigQuery capture:
+      registers the EP ones, mutes the rest with a stated reason, escalates the
+      ambiguous, and reports any base whose access we have LOST. Leaves
+      ep.v_airtable_base_triage_queue empty or explained.
+    tags: [airtable, capture, registration, triage, drift, nightly, ep]
+    examples:
+      - "triage the new Airtable bases"
+      - "anything show up in the base visibility sweep?"
+      - "did we get granted access to anything new"
+
+    runbook: .claude/skills/airtable-base-triage/SKILL.md
+
+    schedule: >
+      PROPOSED, not yet running: nightly, after the Civis misc-jobs job (~3:00
+      AM ET) has recorded the sweep this pass reads. No Task Scheduler job
+      exists and none should be created — per the project CLAUDE.md, scheduled
+      agent fires go through the tower or they earn no track record. Until a
+      grant exists this task type fires only when a human asks.
+
+    detection_surface: >
+      ep.v_airtable_base_triage_queue — three reasons: new_unregistered
+      (visible, no registry row, not muted), access_lost (enabled registry row
+      the PAT can no longer read), needs_review (a prior pass escalated).
+
+      FRESHNESS GUARD, and it is not optional: an empty queue is meaningful
+      ONLY if the sweep actually ran. If misc_jobs/airtable_base_visibility.py
+      failed, every row keeps yesterday's last_seen_date, MAX(last_seen_date)
+      moves back with them, every base still computes as visible, and the queue
+      goes CLEAN rather than stale — a failed sweep is indistinguishable from a
+      quiet night. So check
+      `SELECT MAX(last_seen_date) FROM ep.airtable_base_visibility`
+      against today's ET date FIRST. If it is behind, close
+      failed-on-precondition naming the stale date. Never report "queue empty"
+      over a sweep that did not run.
+    heartbeat: >
+      Two places, and neither is watched yet. (1) The Civis misc-jobs log
+      carries the sweep's own line — visible/new/no-longer-visible counts and
+      queue depth per reason — which is where a dead SWEEP shows up. (2) This
+      pass's own result. "Queue empty, sweep fresh" and a clean exit is a
+      healthy quiet run and must stay distinguishable from a dead one. GAP ON
+      RECORD: nothing watches either today. Under law the ledger DISPATCH row
+      becomes the real heartbeat for the pass; the sweep stays a Civis-failure-
+      email concern.
+
+    parameters: []
+    ask_rules: []
+    # Both empty for the standard scheduled-task-type reason: origin=scheduled
+    # cannot interview (treaty §5). The queue IS the input. Every condition
+    # that would be a question is an escalation below.
+
+    preconditions:
+      - "BigQuery MCP reachable for proj-tmc-mem-com."
+      - "ep.airtable_base_visibility and ep.v_airtable_base_triage_queue exist
+         (hand-applied from bq/airtable_base_visibility.sql; apply_bq_views.py
+         is hardcoded to ep_2026_cleaned and does NOT cover the ep dataset)."
+      - "The sweep ran today — MAX(last_seen_date) = today's ET date. See the
+         freshness guard; this is a precondition, not a nicety."
+      - "AIRTABLE_API_KEY available, for --check-access before enabling a row."
+
+    writes:
+      - system: BigQuery
+        operation: "UPDATE triage_status / triage_notes / triaged_by / triaged_at
+                    on ep.airtable_base_visibility, keyed by base_id"
+        reversible: true
+        idempotent: true
+        destructive: false
+        notes: >
+          Verdict columns only; observation columns belong to the nightly sweep
+          and are re-stamped by it. triaged_by is 'agent:<YYYY-MM-DD>-base-triage',
+          which is what makes a bad pass reversible as a set. Rows are never
+          deleted — the ledger's whole value is that a base keeps its row.
+      - system: BigQuery
+        operation: "MERGE a new row into ep.airtable_sync_sources (register a
+                    base for capture), keyed on base_id"
+        reversible: true
+        idempotent: true
+        destructive: false
+        notes: >
+          Reversible by setting enabled = FALSE, but state the blast radius
+          honestly: an enabled row causes the 6:45 AM ET capture to CREATE
+          typed tables in ep_2026_raw and add a branch to the ep_2026_cleaned
+          union views. Un-registering later leaves orphaned tables behind for a
+          human to drop. Registering something that is not EP data is therefore
+          not a no-op, which is why the mute verdict exists and why the guards
+          forbid guessing.
+
+    guards:
+      - "Never modify a visibility row whose triaged_by is a PERSON. Human
+         verdicts are not an agent's to revise. Correcting a prior AGENT verdict
+         is permitted and the correction goes in triage_notes."
+      - "Never change bq_table_prefix on an existing registry row — it names the
+         landed BigQuery tables and changing it orphans everything captured
+         under the old name."
+      - "Never set enabled = TRUE without --check-access confirming the PAT can
+         read the base. Register DISABLED with a note instead: a disabled row is
+         visible downstream, an absent one is not."
+      - "Never disable or delete a registry row to clear an access_lost entry.
+         That converts a loud failure into the exact silent gap this system
+         exists to prevent. Escalate it."
+      - "Never DELETE from ep.airtable_base_visibility. A deleted row makes its
+         base look newly-appeared forever."
+      - "Never register a base whose name marks it a template
+         (app64MZeqXk6BuuPi, app00ZGvBKtveksbn, appTt4SsXD0lsBU6i) — capturing a
+         template lands its dummy rows as program data."
+      - "Bulk mutes: a category mute covering more than 10 bases in one pass is
+         a bootstrap action, not a nightly one. Under the freeze it does not
+         happen unattended at all; once lifted, escalate rather than batch."
+      - "When in doubt, needs_review. A wrong mute silently loses a state's data
+         for a cycle; a needs_review row just waits. Bias hard toward the cheap
+         error."
+
+    abort:
+      max_minutes: 20
+      max_actions: 60
+      # Sized for the STEADY state this becomes after the bootstrap freeze
+      # lifts: 0-3 new bases on a typical night, each a lookup and one write.
+      # Deliberately NOT sized for the 134-base backlog — a pass that finds
+      # itself needing more than this has hit a condition the freeze covers,
+      # and aborting is the correct outcome rather than grinding through it.
+
+    evidence_of_done:
+      - "The freshness guard result: MAX(last_seen_date) and today's ET date,
+         stated explicitly even on a clean run."
+      - "Counts by verdict (registered / ignored / needs_review), and the queue
+         depth by reason before and after."
+      - "For every base registered: base name, base_id, state, base_type,
+         bq_table_prefix, and the table inventory --check-access reported."
+      - "For every base muted: name, base_id, and the category reason. A mute
+         with no stated reason is not evidence of done."
+      - "For every escalation: what was checked, and what would settle it."
+      - "The three verification queries from the runbook returning zero:
+         queue-requery for handled reasons, duplicate-prefix check, and the
+         muted-without-a-reason check."
+      - "'Queue empty, sweep fresh' when nothing was found — the quiet-healthy
+         report, which must never be produced over a stale sweep."
+
+    verify: semantic
+    # A wrong mute passes every mechanical check that exists: the row is
+    # well-formed, the status is a legal value, the note is non-empty, nothing
+    # is out of contract. What it costs is a state's entire cycle of EP data
+    # silently absent from the warehouse — the exact failure that produced this
+    # project's 2026-07-23..09-02 gap. Tier M cannot grade "is this base EP
+    # work?", so tier S must.
+
+    error_budget:
+      window: 20
+      min_runs_floor: 5
+      pass_threshold: 0.9
+
+    ticketing:
+      asana_project: "1217842576164435"   # Dispatch Ops
+
+    residual_human_steps:
+      - "Adjudicate needs_review rows: confirm the agent's read, or rule and set
+         triaged_by to Rob (Rob)."
+      - "Restore or chase Airtable access for any access_lost base — an agent
+         cannot grant itself a PAT scope (Rob)."
+      - "Decide whether an off-process base should also get a spec in
+         ep-airtable-utilities, so its NEXT cycle registers itself rather than
+         arriving here again (Rob)."
+
+    escalation:
+      - "Any access_lost row. Capture for that base is failing and the fix is a
+         human Airtable grant. File it; never attempt a workaround."
+      - "The freshness guard fails (MAX(last_seen_date) behind today). Close
+         failed-on-precondition with the stale date — do not triage against a
+         sweep that did not run."
+      - "A base that looks like EP program data but appears to belong to another
+         organization's workspace. Capturing another org's base is a
+         relationship question, not a plumbing one."
+      - "A bq_table_prefix collision that cannot be resolved from the naming
+         convention — stop rather than mint a competing prefix."
+      - "A base with a spec in ep-airtable-utilities turns up unregistered. That
+         means their registration step or audit has a hole; report it there
+         rather than patching the symptom with a manual row."
+
+    do_not_touch:
+      - "Registry rows whose registered_by is 'ep-airtable-utilities' — owned by
+         that project's spec system. A divergence is a bug to report, not to
+         patch here."
+      - "Observation columns on ep.airtable_base_visibility (base_name,
+         permission_level, first_seen_date, last_seen_date) — the nightly sweep
+         owns them and will overwrite anything written here."
+      - "ep_2026_raw tables and the ep_2026_cleaned views. Registration causes
+         them to change; this pass never edits them directly."
+      - "civis/*.sh entrypoints and misc_jobs_schedule.yaml. Changing what the
+         nightly job runs is not part of triaging its output."
